@@ -51,7 +51,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: clamp(1rem, 4vw, 2.25rem);
+            padding: clamp(0.85rem, 3.2vw, 1.9rem);
         }
         body::before {
             content: '';
@@ -63,20 +63,20 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             z-index: 0;
         }
         main {
-            width: min(580px, 100%);
+            width: min(540px, 100%);
             text-align: center;
             z-index: 1;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            gap: clamp(0.6rem, 2.2vh, 0.95rem);
+            gap: clamp(0.45rem, 1.8vh, 0.8rem);
             margin: 0 auto;
-            padding: clamp(0.6rem, 2vh, 1.4rem) clamp(0.75rem, 3vw, 1.6rem);
+            padding: clamp(0.45rem, 1.6vh, 1.1rem) clamp(0.6rem, 2.6vw, 1.35rem);
         }
         h1 {
-            font-size: clamp(2rem, 7vw, 3.2rem);
-            margin: 0 0 clamp(0.5rem, 1.5vh, 0.85rem);
+            font-size: clamp(1.85rem, 6vw, 2.7rem);
+            margin: 0 0 clamp(0.4rem, 1.2vh, 0.7rem);
             font-weight: 800;
             letter-spacing: -0.02em;
             background: linear-gradient(120deg, var(--gradient-start), var(--gradient-end));
@@ -86,34 +86,35 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             animation: gradient-shift 6s ease-in-out infinite;
         }
         p.lede {
-            font-size: clamp(0.9rem, 2.3vw, 1rem);
+            font-size: clamp(0.86rem, 2.1vw, 0.96rem);
             color: var(--text-muted);
-            margin: 0 auto clamp(0.85rem, 2.4vh, 1.4rem);
-            line-height: 1.55;
-            max-width: clamp(34ch, 78%, 46ch);
+            margin: 0 auto clamp(0.65rem, 2vh, 1.1rem);
+            line-height: 1.48;
+            max-width: clamp(32ch, 76%, 44ch);
         }
         .status-pill {
             display: inline-flex;
             align-items: center;
-            gap: 0.5rem;
+            gap: 0.45rem;
             border-radius: 999px;
-            border: 1px solid rgba(255,255,255,0.15);
-            padding: 0.35rem 0.9rem;
-            background: rgba(255,255,255,0.06);
-            font-size: clamp(0.78rem, 2.1vw, 0.9rem);
+            border: 1px solid rgba(255,255,255,0.08);
+            padding: 0.3rem 0.75rem;
+            background: rgba(255,255,255,0.035);
+            font-size: clamp(0.72rem, 1.9vw, 0.84rem);
             font-weight: 500;
-            margin-bottom: clamp(0.75rem, 2.4vh, 1.15rem);
+            color: rgba(228,231,244,0.85);
+            margin-bottom: clamp(0.55rem, 1.8vh, 0.95rem);
         }
         .logo-frame {
-            width: clamp(78px, 16vw, 112px);
-            height: clamp(78px, 16vw, 112px);
+            width: clamp(70px, 14vw, 104px);
+            height: clamp(70px, 14vw, 104px);
             border-radius: 50%;
             padding: 0.35rem;
             background: linear-gradient(140deg, rgba(118, 75, 162, 0.9), rgba(102, 126, 234, 0.6));
             display: flex;
             align-items: center;
             justify-content: center;
-            margin-bottom: clamp(0.75rem, 2.3vh, 1.1rem);
+            margin-bottom: clamp(0.6rem, 1.8vh, 0.9rem);
         }
         .logo-frame img {
             width: 100%;
@@ -124,16 +125,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             box-shadow: inset 0 0 0 1px rgba(255,255,255,0.1);
         }
         .status-dot {
-            width: 0.55rem;
-            height: 0.55rem;
+            width: 0.45rem;
+            height: 0.45rem;
             border-radius: 50%;
-            background: var(--status-up);
-            box-shadow: 0 0 16px rgba(0,0,0,0.3);
+            background: rgba(61, 218, 180, 0.7);
+            box-shadow: 0 0 12px rgba(61, 218, 180, 0.25);
         }
         .cta-group {
             display: flex;
             flex-direction: column;
-            gap: clamp(0.6rem, 2vh, 0.85rem);
+            gap: clamp(0.45rem, 1.6vh, 0.7rem);
             width: 100%;
             align-items: center;
         }
@@ -146,13 +147,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             border: 1px solid transparent;
             text-decoration: none;
             font-weight: 600;
-            font-size: clamp(0.9rem, 2.4vw, 1rem);
+            font-size: clamp(0.86rem, 2vw, 0.96rem);
             display: inline-flex;
             align-items: center;
             gap: 0.5rem;
             justify-content: center;
             transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-            min-width: 230px;
+            min-width: 204px;
         }
         .btn-primary {
             background: linear-gradient(120deg, var(--gradient-start), var(--gradient-end));
@@ -173,7 +174,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             display: flex;
             flex-wrap: wrap;
             justify-content: center;
-            gap: clamp(0.55rem, 2vw, 0.8rem);
+            gap: clamp(0.45rem, 1.8vw, 0.7rem);
             width: 100%;
         }
         .pill {
@@ -182,22 +183,22 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             gap: 0.15rem;
             border: 1px solid rgba(255,255,255,0.2);
             border-radius: 18px;
-            padding: 0.65rem 0.9rem;
-            min-width: 130px;
-            max-width: 190px;
+            padding: 0.55rem 0.85rem;
+            min-width: 120px;
+            max-width: 176px;
             background: rgba(255,255,255,0.05);
             box-shadow: 0 12px 25px rgba(0,0,0,0.25);
         }
         .pill span {
-            font-size: clamp(0.72rem, 2vw, 0.8rem);
+            font-size: clamp(0.68rem, 1.8vw, 0.76rem);
             color: var(--text-muted);
             line-height: 1.3;
         }
         .pill strong {
-            font-size: clamp(0.78rem, 2vw, 0.88rem);
+            font-size: clamp(0.74rem, 1.9vw, 0.84rem);
         }
         footer {
-            font-size: clamp(0.75rem, 2vw, 0.82rem);
+            font-size: clamp(0.7rem, 1.8vw, 0.8rem);
             color: var(--text-muted);
         }
         a.link {
@@ -221,18 +222,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }
         @media (max-width: 640px) {
             .pill {
-                min-width: calc(50% - 0.6rem);
+                min-width: calc(50% - 0.5rem);
                 max-width: none;
             }
-            .pill strong { font-size: 0.82rem; }
-            .pill span { font-size: 0.73rem; }
+            .pill strong { font-size: 0.78rem; }
+            .pill span { font-size: 0.7rem; }
         }
         @media (max-width: 460px) {
             body {
-                padding: clamp(0.75rem, 5vw, 1.4rem);
+                padding: clamp(0.6rem, 4.5vw, 1.2rem);
             }
             .cta-group {
-                gap: 0.55rem;
+                gap: 0.45rem;
             }
             .btn {
                 width: 100%;
@@ -244,19 +245,19 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }
         @media (max-height: 720px) {
             main {
-                gap: 0.6rem;
-                padding-block: clamp(0.6rem, 2.2vh, 1rem);
+                gap: 0.45rem;
+                padding-block: clamp(0.4rem, 1.6vh, 0.8rem);
             }
             .logo-frame {
-                margin-bottom: 0.85rem;
-                width: clamp(72px, 14vw, 104px);
-                height: clamp(72px, 14vw, 104px);
+                margin-bottom: 0.65rem;
+                width: clamp(64px, 13vw, 96px);
+                height: clamp(64px, 13vw, 96px);
             }
             p.lede {
-                margin-bottom: clamp(0.65rem, 1.8vh, 1.05rem);
+                margin-bottom: clamp(0.5rem, 1.5vh, 0.85rem);
             }
             .pill-grid {
-                gap: 0.5rem;
+                gap: 0.4rem;
             }
         }
     </style>
