@@ -10,6 +10,7 @@ DisTask is a production-ready Discord bot that provides lightweight kanban board
 - ✅ **Task lifecycle tools**: assign, move, edit, complete, delete, and full-text search
 - ✅ **Due dates + reminders**: background worker posts daily digests to board channels
 - ✅ **Feature requests**: `/request-feature` modal logs ideas and syncs them to GitHub
+- ✅ **Automation agent**: deduplicates, scores, and syncs shipping status from git history
 - ✅ **Permission-aware administration** (`Manage Guild`/`Manage Channels` checks where appropriate)
 - ✅ **Structured embeds & logging** (console + rotating file target)
 - ✅ **Systemd unit** for 24/7 hosting on Linux
@@ -34,7 +35,8 @@ distask/
 │   ├── reminders.py     # Background reminder scheduler
 │   └── github_utils.py  # GitHub Markdown export helper
 ├── LICENSE              # MIT
-├── scripts/             # Operational tooling
+├── scripts/             # Operational tooling & automation
+│   ├── feature_agent.py # Duplicate detection, scoring, git integration
 │   └── migrate_sqlite_to_postgres.py  # One-time migration helper
 └── README.md            # You are here
 ```
@@ -97,6 +99,30 @@ Additional behavior:
 - Default rate limit is 1 call / 3s per user. Heavy commands (`/create-board`, `/add-task`, `/search-task`, `/edit-task`) use 10s cooldowns.
 - Reminder digests run roughly once per minute and deliver a daily summary (overdue + next 24h) to each board channel when the guild's scheduled time passes. Use `/toggle-notifications` + `/set-reminder` to control behavior per guild.
 - Feature requests persist to the `feature_requests` table. When GitHub credentials are configured, the bot publishes the backlog to `feature_requests.md` via the GitHub Contents API.
+
+## Feature Automation Pipeline
+
+`scripts/feature_agent.py` keeps the public backlog clean and in sync with production deployments. It runs four passes:
+
+1. **Ingest & normalise** – fetches the latest rows from PostgreSQL (or falls back to `feature_requests.md`) so the workload survives restarts.
+2. **Detect duplicates** – uses fuzzy matching on title + suggestion, automatically tagging high-confidence duplicates and logging near-matches for triage.
+3. **Score & queue** – computes `score = priority + ease_of_implementation` (defaults to `5` if unset), storing results on the request and emitting a prioritised queue at `automation/feature_queue.{json,md}`.
+4. **Sync completion** – scans new git commits for tokens such as `FR-123` or `feature-request #123`, then marks matching feature requests as completed (with commit metadata and timestamps).
+
+Run it manually or from CI/cron:
+
+```bash
+source .venv/bin/activate
+python scripts/feature_agent.py
+```
+
+The agent maintains its own cursor (`data/feature_agent_state.json`, ignored by git) and reuses the same GitHub credentials as the bot to publish the refreshed `feature_requests.md`.
+
+### Implementation Workflow
+
+- Start implementation work on a branch named `feature/<id>-short-slug` (e.g. `feature/123-modal-export`).
+- Include `FR-123` (or `feature-request #123`) in at least one commit message; the automation uses these markers to move the request to `completed`.
+- Post-deploy, re-run the agent to confirm the request is marked as live and the queue reflects the next priority item.
 
 ## Systemd Deployment
 

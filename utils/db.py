@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
@@ -29,7 +30,7 @@ class Database:
 
     async def init(self) -> None:
         if self._pool is None:
-            self._pool = await asyncpg.create_pool(dsn=self.dsn, min_size=1, max_size=10)
+            self._pool = await asyncpg.create_pool(dsn=self.dsn, min_size=1, max_size=10, timeout=10.0)
         async with self._pool.acquire() as conn:
             schema_statements = [
                 """
@@ -88,10 +89,20 @@ class Database:
                     priority INTEGER,
                     ease_of_implementation INTEGER,
                     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-                    completed_at TIMESTAMP
+                    completed_at TIMESTAMP,
+                    duplicate_of INTEGER REFERENCES feature_requests(id),
+                    merge_history JSONB NOT NULL DEFAULT '[]'::jsonb,
+                    analysis_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    last_analyzed_at TIMESTAMP,
+                    score NUMERIC
                 )
                 """,
                 "CREATE INDEX IF NOT EXISTS idx_feature_requests_guild ON feature_requests(guild_id)",
+                "ALTER TABLE feature_requests ADD COLUMN IF NOT EXISTS duplicate_of INTEGER REFERENCES feature_requests(id)",
+                "ALTER TABLE feature_requests ADD COLUMN IF NOT EXISTS merge_history JSONB NOT NULL DEFAULT '[]'::jsonb",
+                "ALTER TABLE feature_requests ADD COLUMN IF NOT EXISTS analysis_data JSONB NOT NULL DEFAULT '{}'::jsonb",
+                "ALTER TABLE feature_requests ADD COLUMN IF NOT EXISTS last_analyzed_at TIMESTAMP",
+                "ALTER TABLE feature_requests ADD COLUMN IF NOT EXISTS score NUMERIC",
             ]
             for statement in schema_statements:
                 await conn.execute(statement)
@@ -439,6 +450,147 @@ class Database:
             fetchall=True,
         )
         return [dict(row) for row in rows or []]
+
+    async def mark_feature_duplicate(
+        self,
+        request_id: int,
+        *,
+        parent_id: int,
+        confidence: float,
+        note: Optional[str] = None,
+    ) -> None:
+        payload = {
+            "duplicate_parent": parent_id,
+            "duplicate_confidence": confidence,
+            "duplicate_note": note,
+            "duplicate_marked_at": _utcnow(),
+        }
+        await self._execute(
+            """
+            UPDATE feature_requests
+            SET status = 'duplicate',
+                duplicate_of = $1,
+                last_analyzed_at = NOW(),
+                analysis_data = COALESCE(analysis_data, '{}'::jsonb) || $2::jsonb
+            WHERE id = $3
+            """,
+            (parent_id, json.dumps(payload), request_id),
+        )
+        history_entry = {
+            "timestamp": _utcnow(),
+            "action": "marked_duplicate",
+            "parent_id": parent_id,
+            "confidence": confidence,
+            "note": note,
+        }
+        await self.append_feature_history(request_id, history_entry)
+        parent_entry = {
+            "timestamp": _utcnow(),
+            "action": "duplicate_linked",
+            "child_id": request_id,
+            "confidence": confidence,
+            "note": note,
+        }
+        await self.append_feature_history(parent_id, parent_entry)
+
+    async def append_feature_history(self, request_id: int, entry: Dict[str, Any]) -> None:
+        await self._execute(
+            """
+            UPDATE feature_requests
+            SET merge_history = COALESCE(merge_history, '[]'::jsonb) || $1::jsonb
+            WHERE id = $2
+            """,
+            (json.dumps([entry]), request_id),
+        )
+
+    async def record_feature_analysis_note(self, request_id: int, note: str, *, tag: Optional[str] = None) -> None:
+        payload = {
+            "timestamp": _utcnow(),
+            "note": note,
+        }
+        if tag:
+            payload["tag"] = tag
+        await self.append_feature_history(request_id, {"analysis_note": payload})
+        await self._execute(
+            """
+            UPDATE feature_requests
+            SET last_analyzed_at = NOW(),
+                analysis_data = COALESCE(analysis_data, '{}'::jsonb) || $1::jsonb
+            WHERE id = $2
+            """,
+            (json.dumps({f"note_{_utcnow()}": note}), request_id),
+        )
+
+    async def set_feature_score(
+        self,
+        request_id: int,
+        *,
+        score: float,
+        priority_value: Optional[int],
+        ease_value: Optional[int],
+    ) -> None:
+        payload = {
+            "score": score,
+            "calculated_at": _utcnow(),
+            "priority_value": priority_value,
+            "ease_value": ease_value,
+        }
+        await self._execute(
+            """
+            UPDATE feature_requests
+            SET score = $1,
+                last_analyzed_at = NOW(),
+                analysis_data = COALESCE(analysis_data, '{}'::jsonb) || $2::jsonb
+            WHERE id = $3
+            """,
+            (score, json.dumps(payload), request_id),
+        )
+
+    async def set_similar_candidates(self, request_id: int, candidates: List[int]) -> None:
+        payload = {
+            "similar_candidates": candidates,
+            "similar_checked_at": _utcnow(),
+        }
+        await self._execute(
+            """
+            UPDATE feature_requests
+            SET analysis_data = COALESCE(analysis_data, '{}'::jsonb) || $1::jsonb,
+                last_analyzed_at = NOW()
+            WHERE id = $2
+            """,
+            (json.dumps(payload), request_id),
+        )
+
+    async def mark_feature_completed(
+        self,
+        request_id: int,
+        *,
+        commit_hash: Optional[str],
+        commit_message: Optional[str],
+    ) -> None:
+        payload = {
+            "completed_via": "git",
+            "commit_hash": commit_hash,
+            "commit_message": commit_message,
+            "completed_recorded_at": _utcnow(),
+        }
+        await self._execute(
+            """
+            UPDATE feature_requests
+            SET status = 'completed',
+                completed_at = COALESCE(completed_at, NOW()),
+                analysis_data = COALESCE(analysis_data, '{}'::jsonb) || $1::jsonb
+            WHERE id = $2
+            """,
+            (json.dumps(payload), request_id),
+        )
+        history_entry = {
+            "timestamp": _utcnow(),
+            "action": "completed",
+            "commit_hash": commit_hash,
+            "commit_message": commit_message,
+        }
+        await self.append_feature_history(request_id, history_entry)
 
     async def _execute(
         self,

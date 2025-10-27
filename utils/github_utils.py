@@ -17,13 +17,13 @@ FEATURE_REQUESTS_PATH = "feature_requests.md"
 
 def _format_markdown(rows: Iterable[Dict[str, Any]]) -> str:
     header = (
-        "| ID | User ID | Guild ID | Title | Suggestion | Suggested Priority | Status | Priority | Ease | Created At | Completed At |\n"
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
+        "| ID | User ID | Guild ID | Title | Suggestion | Suggested Priority | Status | Priority | Ease | Score | Duplicate Of | Last Analyzed | Created At | Completed At |\n"
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
     )
     lines: List[str] = []
     for row in rows:
         lines.append(
-            "| {id} | {user_id} | {guild_id} | {title} | {suggestion} | {suggested_priority} | {status} | {priority} | {ease} | {created_at} | {completed_at} |".format(
+            "| {id} | {user_id} | {guild_id} | {title} | {suggestion} | {suggested_priority} | {status} | {priority} | {ease} | {score} | {duplicate_of} | {last_analyzed} | {created_at} | {completed_at} |".format(
                 id=_format_cell(row.get("id")),
                 user_id=_format_cell(row.get("user_id")),
                 guild_id=_format_cell(row.get("guild_id")),
@@ -33,12 +33,15 @@ def _format_markdown(rows: Iterable[Dict[str, Any]]) -> str:
                 status=_format_cell(row.get("status")),
                 priority=_format_cell(row.get("priority")),
                 ease=_format_cell(row.get("ease_of_implementation")),
+                score=_format_cell(row.get("score")),
+                duplicate_of=_format_cell(row.get("duplicate_of")),
+                last_analyzed=_format_cell(row.get("last_analyzed_at")),
                 created_at=_format_cell(row.get("created_at")),
                 completed_at=_format_cell(row.get("completed_at")),
             )
         )
     if not lines:
-        lines.append("| - | - | - | No feature requests yet | - | - | - | - | - | - | - |")
+        lines.append("| - | - | - | No feature requests yet | - | - | - | - | - | - | - | - | - | - |")
     return header + "\n".join(lines) + "\n"
 
 
@@ -77,7 +80,8 @@ async def export_to_github(
     }
 
     sha: Optional[str] = None
-    async with aiohttp.ClientSession() as session:
+    timeout = aiohttp.ClientTimeout(total=15)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
         try:
             async with session.get(url, headers=headers) as response:
                 if response.status == 200:

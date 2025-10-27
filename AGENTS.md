@@ -4,6 +4,7 @@
 - `bot.py` loads env config, configures logging, and registers all cogs; it's the Discord entrypoint.
 - `cogs/` contains slash-command groups (`boards.py`, `tasks.py`, `admin.py`, `features.py`); register new cogs in `bot.py`.
 - `utils/` centralizes async helpers (PostgreSQL wrapper, embeds, validators, reminders, GitHub exports) for reuse across cogs.
+- `scripts/feature_agent.py` runs the feature-request automation (dedupe, scoring, git sync); schedule it in CI or cron as needed.
 - `web/app.py` hosts the FastAPI landing page and `/status` endpoint used by `distask.service`.
 - `data/` and `logs/` are runtime outputs (archives/backups, rotating logs); keep them out of commits.
 
@@ -11,6 +12,7 @@
 - `python -m venv .venv` followed by `source .venv/bin/activate` prepares an isolated environment.
 - `.venv/bin/pip install -r requirements.txt` installs Discord bot and web dependencies.
 - `python bot.py` starts the bot and ensures the configured PostgreSQL schema + default board columns exist.
+- `python scripts/feature_agent.py` runs the backlog automation pass (requires DB + git access).
 - `uvicorn web.app:app --reload` runs the status site locally on `http://127.0.0.1:8000`.
 - `tail -f logs/distask.log` streams structured logs for troubleshooting instead of ad-hoc prints.
 
@@ -27,12 +29,14 @@
 
 ## Commit & Pull Request Guidelines
 - Follow existing history: imperative subjects with optional scopes (`feat:`, `web:`), e.g., `feat: tighten reminders`.
+- Reference feature requests in implementation commits using `FR-<id>` (for example `FR-123`) so the automation can mark them completed automatically.
 - Keep unrelated changes in separate commits and ship schema updates with the cogs that use them.
 - PRs should include a summary, testing notes, linked issue or Discord thread, and visuals for embed/UI tweaks.
 - Highlight permission changes or new env vars in the PR title or checklist.
 
 ## Security & Configuration Tips
-- Copy `.env.example` to `.env`, store secrets outside git, and point systemd units at that file. Populate `github_token`/`repo_owner`/`repo_name` so `/request-feature` exports succeed.
+- Copy `.env.example` to `.env`, store secrets outside git, and point systemd units at that file. Populate `github_token`/`repo_owner`/`repo_name` so `/request-feature` exports succeed and the automation can publish updates.
+- The feature agent persists a cursor in `data/feature_agent_state.json`; the folder is git-ignored, ensure deployments retain it between runs if you need incremental git scans.
 - Run services as a non-root user and restrict access to `data/` and `logs/`.
 - Update the invite URL in `web/app.py` whenever the `discord_client_id` changes.
 - Last updated: $(date) - Verified commit process working correctly.
