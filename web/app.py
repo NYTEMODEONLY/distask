@@ -7,10 +7,12 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 APP_DIR = Path(__file__).resolve().parent
 
 app = FastAPI(title="DisTask Landing", docs_url=None, redoc_url=None)
+app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
 
 CLIENT_ID = os.getenv("DISCORD_CLIENT_ID", "1432225946219450449")
 INVITE_URL = os.getenv("DISCORD_INVITE_URL") or f"https://discord.com/oauth2/authorize?client_id={CLIENT_ID}&scope=bot%20applications.commands"
@@ -105,6 +107,26 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             font-size: 0.95rem;
             font-weight: 500;
             margin-bottom: 1.5rem;
+        }
+        .logo-frame {
+            width: clamp(96px, 18vw, 132px);
+            height: clamp(96px, 18vw, 132px);
+            border-radius: 50%;
+            padding: 0.35rem;
+            background: linear-gradient(140deg, rgba(118, 75, 162, 0.9), rgba(102, 126, 234, 0.6));
+            box-shadow: 0 25px 55px rgba(118, 75, 162, 0.35);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 1.5rem;
+        }
+        .logo-frame img {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            object-fit: cover;
+            background: rgba(15, 5, 27, 0.85);
+            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.1);
         }
         .status-dot {
             width: 0.65rem;
@@ -210,6 +232,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <div class=\"status-pill\" id=\"status-pill\">
             <span class=\"status-dot\" id=\"status-dot\"></span>
             <span class=\"status-label\" id=\"status-label\">Checking Status…</span>
+        </div>
+        <div class=\"logo-frame\">
+            <img src=\"/static/distask-logo.png\" alt=\"DisTask bot logo\" width=\"132\" height=\"132\" loading=\"lazy\" />
         </div>
         <h1>DisTask</h1>
         <p class=\"lede\">Orchestrate disciplined Discord workflows with kanban clarity, slash-command speed, and reliable reminders that keep every guild project humming.</p>
