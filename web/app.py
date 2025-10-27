@@ -16,6 +16,17 @@ app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
 
 CLIENT_ID = os.getenv("DISCORD_CLIENT_ID", "1432225946219450449")
 INVITE_URL = os.getenv("DISCORD_INVITE_URL") or f"https://discord.com/oauth2/authorize?client_id={CLIENT_ID}&scope=bot%20applications.commands"
+SITE_ROOT = os.getenv("DISTASK_SITE_URL", "https://distask.xyz").rstrip("/")
+SITE_URL = SITE_ROOT or "https://distask.xyz"
+CANONICAL_URL = f"{SITE_URL}/"
+PAGE_DESCRIPTION = os.getenv(
+    "DISTASK_PAGE_DESCRIPTION",
+    "DisTask keeps Discord projects disciplined with kanban boards, reminders, and slash-command automation in one lightweight bot.",
+)
+CARD_IMAGE = os.getenv(
+    "DISTASK_CARD_IMAGE",
+    f"{SITE_URL}/static/distask-logo.png",
+)
 
 HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang=\"en\">
@@ -23,6 +34,22 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <meta charset=\"UTF-8\" />
     <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />
     <title>DisTask · Discord Workflows</title>
+    <meta name=\"description\" content=\"{{DESCRIPTION}}\" />
+    <meta property=\"og:type\" content=\"website\" />
+    <meta property=\"og:url\" content=\"{{CANONICAL_URL}}\" />
+    <meta property=\"og:title\" content=\"DisTask · Discord Workflows\" />
+    <meta property=\"og:description\" content=\"{{DESCRIPTION}}\" />
+    <meta property=\"og:image\" content=\"{{CARD_IMAGE}}\" />
+    <meta property=\"og:image:type\" content=\"image/png\" />
+    <meta property=\"og:image:width\" content=\"1024\" />
+    <meta property=\"og:image:height\" content=\"1024\" />
+    <meta name=\"twitter:card\" content=\"summary_large_image\" />
+    <meta name=\"twitter:title\" content=\"DisTask · Discord Workflows\" />
+    <meta name=\"twitter:description\" content=\"{{DESCRIPTION}}\" />
+    <meta name=\"twitter:image\" content=\"{{CARD_IMAGE}}\" />
+    <meta name=\"theme-color\" content=\"#667eea\" />
+    <link rel=\"canonical\" href=\"{{CANONICAL_URL}}\" />
+    <link rel=\"icon\" href=\"/static/distask-logo.png\" type=\"image/png\" />
     <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\" />
     <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin />
     <link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&display=swap\" rel=\"stylesheet\" />
@@ -348,7 +375,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 </html>
 """
 
-HTML = HTML_TEMPLATE.replace("{{INVITE_URL}}", INVITE_URL)
+HTML = (
+    HTML_TEMPLATE.replace("{{INVITE_URL}}", INVITE_URL)
+    .replace("{{DESCRIPTION}}", PAGE_DESCRIPTION)
+    .replace("{{CARD_IMAGE}}", CARD_IMAGE)
+    .replace("{{CANONICAL_URL}}", CANONICAL_URL)
+)
 
 
 @app.get("/", response_class=HTMLResponse)
