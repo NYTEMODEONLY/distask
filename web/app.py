@@ -51,7 +51,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: clamp(1.25rem, 5vw, 2.75rem);
+            padding: clamp(1rem, 4vw, 2.25rem);
         }
         body::before {
             content: '';
@@ -63,24 +63,20 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             z-index: 0;
         }
         main {
-            width: min(620px, 100%);
+            width: min(580px, 100%);
             text-align: center;
             z-index: 1;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            gap: clamp(0.75rem, 3vh, 1.2rem);
+            gap: clamp(0.6rem, 2.2vh, 0.95rem);
             margin: 0 auto;
-            padding: clamp(1rem, 4vh, 2.5rem) clamp(0.75rem, 4vw, 2rem);
-            background: rgba(8, 5, 16, 0.4);
-            border-radius: 36px;
-            box-shadow: 0 28px 80px rgba(5, 3, 12, 0.55);
-            backdrop-filter: blur(18px);
+            padding: clamp(0.6rem, 2vh, 1.4rem) clamp(0.75rem, 3vw, 1.6rem);
         }
         h1 {
-            font-size: clamp(2.25rem, 8vw, 4rem);
-            margin: 0 0 clamp(0.65rem, 2vh, 1.1rem);
+            font-size: clamp(2rem, 7vw, 3.2rem);
+            margin: 0 0 clamp(0.5rem, 1.5vh, 0.85rem);
             font-weight: 800;
             letter-spacing: -0.02em;
             background: linear-gradient(120deg, var(--gradient-start), var(--gradient-end));
@@ -90,11 +86,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             animation: gradient-shift 6s ease-in-out infinite;
         }
         p.lede {
-            font-size: clamp(0.95rem, 2.8vw, 1.05rem);
+            font-size: clamp(0.9rem, 2.3vw, 1rem);
             color: var(--text-muted);
-            margin: 0 auto clamp(1.1rem, 3vh, 1.8rem);
-            line-height: 1.65;
-            max-width: clamp(36ch, 80%, 48ch);
+            margin: 0 auto clamp(0.85rem, 2.4vh, 1.4rem);
+            line-height: 1.55;
+            max-width: clamp(34ch, 78%, 46ch);
         }
         .status-pill {
             display: inline-flex;
@@ -102,23 +98,22 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             gap: 0.5rem;
             border-radius: 999px;
             border: 1px solid rgba(255,255,255,0.15);
-            padding: 0.4rem 1rem;
+            padding: 0.35rem 0.9rem;
             background: rgba(255,255,255,0.06);
-            font-size: clamp(0.85rem, 2.5vw, 0.95rem);
+            font-size: clamp(0.78rem, 2.1vw, 0.9rem);
             font-weight: 500;
-            margin-bottom: clamp(1rem, 3vh, 1.35rem);
+            margin-bottom: clamp(0.75rem, 2.4vh, 1.15rem);
         }
         .logo-frame {
-            width: clamp(96px, 18vw, 132px);
-            height: clamp(96px, 18vw, 132px);
+            width: clamp(78px, 16vw, 112px);
+            height: clamp(78px, 16vw, 112px);
             border-radius: 50%;
             padding: 0.35rem;
             background: linear-gradient(140deg, rgba(118, 75, 162, 0.9), rgba(102, 126, 234, 0.6));
-            box-shadow: 0 25px 55px rgba(118, 75, 162, 0.35);
             display: flex;
             align-items: center;
             justify-content: center;
-            margin-bottom: 1.5rem;
+            margin-bottom: clamp(0.75rem, 2.3vh, 1.1rem);
         }
         .logo-frame img {
             width: 100%;
@@ -129,8 +124,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             box-shadow: inset 0 0 0 1px rgba(255,255,255,0.1);
         }
         .status-dot {
-            width: 0.65rem;
-            height: 0.65rem;
+            width: 0.55rem;
+            height: 0.55rem;
             border-radius: 50%;
             background: var(--status-up);
             box-shadow: 0 0 16px rgba(0,0,0,0.3);
@@ -138,7 +133,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .cta-group {
             display: flex;
             flex-direction: column;
-            gap: 0.85rem;
+            gap: clamp(0.6rem, 2vh, 0.85rem);
             width: 100%;
             align-items: center;
         }
@@ -151,7 +146,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             border: 1px solid transparent;
             text-decoration: none;
             font-weight: 600;
-            font-size: 1rem;
+            font-size: clamp(0.9rem, 2.4vw, 1rem);
             display: inline-flex;
             align-items: center;
             gap: 0.5rem;
@@ -178,7 +173,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             display: flex;
             flex-wrap: wrap;
             justify-content: center;
-            gap: 0.75rem;
+            gap: clamp(0.55rem, 2vw, 0.8rem);
             width: 100%;
         }
         .pill {
@@ -187,22 +182,22 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             gap: 0.15rem;
             border: 1px solid rgba(255,255,255,0.2);
             border-radius: 18px;
-            padding: 0.75rem 1rem;
-            min-width: 140px;
-            max-width: 200px;
+            padding: 0.65rem 0.9rem;
+            min-width: 130px;
+            max-width: 190px;
             background: rgba(255,255,255,0.05);
             box-shadow: 0 12px 25px rgba(0,0,0,0.25);
         }
         .pill span {
-            font-size: 0.8rem;
+            font-size: clamp(0.72rem, 2vw, 0.8rem);
             color: var(--text-muted);
             line-height: 1.3;
         }
         .pill strong {
-            font-size: 0.9rem;
+            font-size: clamp(0.78rem, 2vw, 0.88rem);
         }
         footer {
-            font-size: 0.85rem;
+            font-size: clamp(0.75rem, 2vw, 0.82rem);
             color: var(--text-muted);
         }
         a.link {
@@ -225,23 +220,19 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
         }
         @media (max-width: 640px) {
-            main {
-                border-radius: 28px;
-                box-shadow: 0 20px 60px rgba(5, 3, 12, 0.5);
-            }
             .pill {
-                min-width: calc(50% - 0.75rem);
+                min-width: calc(50% - 0.6rem);
                 max-width: none;
             }
-            .pill strong { font-size: 0.85rem; }
-            .pill span { font-size: 0.75rem; }
+            .pill strong { font-size: 0.82rem; }
+            .pill span { font-size: 0.73rem; }
         }
         @media (max-width: 460px) {
             body {
-                padding: clamp(1rem, 6vw, 1.75rem);
+                padding: clamp(0.75rem, 5vw, 1.4rem);
             }
             .cta-group {
-                gap: 0.65rem;
+                gap: 0.55rem;
             }
             .btn {
                 width: 100%;
@@ -253,19 +244,19 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }
         @media (max-height: 720px) {
             main {
-                gap: 0.75rem;
-                padding-block: clamp(0.9rem, 3vh, 1.5rem);
+                gap: 0.6rem;
+                padding-block: clamp(0.6rem, 2.2vh, 1rem);
             }
             .logo-frame {
-                margin-bottom: 1rem;
-                width: clamp(84px, 15vw, 120px);
-                height: clamp(84px, 15vw, 120px);
+                margin-bottom: 0.85rem;
+                width: clamp(72px, 14vw, 104px);
+                height: clamp(72px, 14vw, 104px);
             }
             p.lede {
-                margin-bottom: clamp(0.85rem, 2vh, 1.3rem);
+                margin-bottom: clamp(0.65rem, 1.8vh, 1.05rem);
             }
             .pill-grid {
-                gap: 0.6rem;
+                gap: 0.5rem;
             }
         }
     </style>
