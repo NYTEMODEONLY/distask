@@ -124,6 +124,7 @@ The API simply shells out to `systemctl show distask.service`, so the status bad
 
 - **Database**: SQLite is stored wherever `database_path` points. Each guild can host multiple boards; deleting a board cascades to columns/tasks.
 - **Logging**: Both stdout and the configured file receive structured logs. Adjust `setup_logging` in `bot.py` if you prefer RotatingFileHandler, etc.
+- **Credentials**: If you push over HTTPS, configure a credential helper (e.g. `git config credential.helper store`) so Personal Access Tokens persist between sessions and non-interactive pushes continue to work.
 - **Extensibility**: New slash commands can be added in the existing cogs or by creating additional cogs and registering them in `bot.py`.
 - **Token Handling**: Never commit `.env` with your production token. Keep secrets in deployment-specific files or environment variables.
 
