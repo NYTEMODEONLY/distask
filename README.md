@@ -105,6 +105,20 @@ A starter service file (`distask.service`) is provided. To use it:
 
 4. View logs with `journalctl -u distask -f` or tail `logs/distask.log`.
 
+## Public Landing Page (distask.xyz)
+
+An always-on landing page lives in `web/app.py`. It renders the non-scrolling hero layout, particle background, CTAs, and a live status indicator that polls `/status` every 10 seconds to mirror the `distask.service` state (`green` = up, `yellow` = transitioning, `red` = down, `gray` = unknown).
+
+Deployment outline:
+
+1. Install the repo requirements so `fastapi` + `uvicorn` are available.
+2. Copy `distask-web.service` into `/etc/systemd/system/`, adjust paths if necessary, then `systemctl enable --now distask-web.service`.
+3. Install Nginx and create `/etc/nginx/sites-available/distask` that proxies `distask.xyz` → `http://127.0.0.1:8000`, enable it (symlink to `sites-enabled`), remove the default server, and `nginx -t && systemctl reload nginx`.
+4. Point the domain’s `A` (and optional `www`) DNS records at this VPS. Add TLS via your preferred method (e.g., `certbot --nginx`) once DNS resolves.
+5. Update the “Deploy to Discord” CTA inside `web/app.py` with your live bot client ID before marketing the invite link.
+
+The API simply shells out to `systemctl show distask.service`, so the status badge always reflects the production bot’s service health.
+
 ## Development Notes
 
 - **Database**: SQLite is stored wherever `database_path` points. Each guild can host multiple boards; deleting a board cascades to columns/tasks.
