@@ -3,14 +3,14 @@
 ## Project Structure & Module Organization
 - `bot.py` loads env config, configures logging, and registers all cogs; it's the Discord entrypoint.
 - `cogs/` contains slash-command groups (`boards.py`, `tasks.py`, `admin.py`); register new cogs in `bot.py`.
-- `utils/` centralizes async helpers (SQLite wrapper, embeds, validators, reminders) for reuse across cogs.
+- `utils/` centralizes async helpers (PostgreSQL wrapper, embeds, validators, reminders) for reuse across cogs.
 - `web/app.py` hosts the FastAPI landing page and `/status` endpoint used by `distask.service`.
-- `data/` and `logs/` are runtime outputs (SQLite DB, rotating logs); keep them out of commits.
+- `data/` and `logs/` are runtime outputs (archives/backups, rotating logs); keep them out of commits.
 
 ## Build, Test, and Development Commands
 - `python -m venv .venv` followed by `source .venv/bin/activate` prepares an isolated environment.
 - `pip install -r requirements.txt` installs Discord bot and web dependencies.
-- `python bot.py` starts the bot and seeds `data/distask.db` plus default board columns.
+- `python bot.py` starts the bot and ensures the configured PostgreSQL schema + default board columns exist.
 - `uvicorn web.app:app --reload` runs the status site locally on `http://127.0.0.1:8000`.
 - `tail -f logs/distask.log` streams structured logs for troubleshooting instead of ad-hoc prints.
 
@@ -22,7 +22,7 @@
 
 ## Testing Guidelines
 - Automated coverage is pending; add tests under `tests/` and run them via `pytest` (with `pytest-asyncio` for coroutines).
-- Use in-memory SQLite (`:memory:`) or temp guild IDs when validating database helpers.
+- Point `DATABASE_URL` at a throwaway PostgreSQL database (or schema) when validating database helpers; clean up fixtures after each run.
 - Record manual checks (e.g., `/create-board`, `/add-task`) in PRs and reference `logs/distask.log` output.
 
 ## Commit & Pull Request Guidelines

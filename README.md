@@ -1,11 +1,11 @@
 # DisTask – Discord Task Boards
 
-DisTask is a production-ready Discord bot that provides lightweight kanban boards and task management powered by slash commands. It ships with async SQLite storage, reminder digests, rich embeds, and deployment tooling so you can keep projects moving without leaving Discord.
+DisTask is a production-ready Discord bot that provides lightweight kanban boards and task management powered by slash commands. It ships with an async PostgreSQL backend, reminder digests, rich embeds, and deployment tooling so you can keep projects moving without leaving Discord.
 
 ## Features
 
 - ✅ **Slash commands for boards and tasks** with cooldowns (3s default, 10s for heavy ops) to prevent spam
-- ✅ **Async SQLite** backend with guild/board/column/task tables and cascade cleanup
+- ✅ **Async PostgreSQL** backend with guild/board/column/task tables and cascade cleanup
 - ✅ **Custom columns** beyond the To Do / In Progress / Done defaults
 - ✅ **Task lifecycle tools**: assign, move, edit, complete, delete, and full-text search
 - ✅ **Due dates + reminders**: background worker posts daily digests to board channels
@@ -26,11 +26,13 @@ distask/
 │   ├── tasks.py         # /add-task, /move-task, /search-task, ...
 │   └── admin.py         # /add-column, /toggle-notifications, ...
 ├── utils/               # Shared helpers
-│   ├── db.py            # Async SQLite wrapper + schema
+│   ├── db.py            # Async PostgreSQL wrapper + schema management
 │   ├── embeds.py        # Embed builders
 │   ├── validators.py    # Input validation + parsing
 │   └── reminders.py     # Background reminder scheduler
 ├── LICENSE              # MIT
+├── scripts/             # Operational tooling
+│   └── migrate_sqlite_to_postgres.py  # One-time migration helper
 └── README.md            # You are here
 ```
 
