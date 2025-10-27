@@ -1,0 +1,13 @@
+[Unit]
+Description=DisTask Feature Request Automation
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/distask
+EnvironmentFile=/root/distask/.env
+ExecStart=/root/distask/.venv/bin/python /root/distask/scripts/feature_agent.py
+
+[Install]
+WantedBy=multi-user.target

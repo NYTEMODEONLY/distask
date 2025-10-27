@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily DisTask feature automation run
+
+[Timer]
+OnCalendar=*-*-* 03:30:00 America/Chicago
+Persistent=true
+Unit=distask-feature-agent.service
+
+[Install]
+WantedBy=timers.target
