@@ -40,12 +40,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             --status-degraded: #f6c177;
         }
         * { box-sizing: border-box; }
+        html, body {
+            height: 100%;
+            overflow: hidden;
+        }
         body {
             margin: 0;
             font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
             background: var(--bg-base);
             color: var(--text-primary);
-            min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -61,9 +64,17 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             z-index: 0;
         }
         main {
-            width: min(640px, 100%);
+            width: min(620px, 100%);
             text-align: center;
             z-index: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 1.2rem;
+            height: 100%;
+            max-height: 640px;
+            margin: 0 auto;
         }
         h1 {
             font-size: clamp(2.25rem, 8vw, 4rem);
@@ -102,16 +113,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             background: var(--status-up);
             box-shadow: 0 0 16px rgba(0,0,0,0.3);
         }
-        .status-desc {
-            margin: 0 0 2rem;
-            font-size: 0.95rem;
-            color: var(--text-muted);
-        }
         .cta-group {
             display: flex;
             flex-direction: column;
             gap: 0.85rem;
-            margin-bottom: 2.5rem;
+            width: 100%;
+            align-items: center;
         }
         @media (min-width: 640px) {
             .cta-group { flex-direction: row; justify-content: center; }
@@ -145,27 +152,32 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             box-shadow: 0 30px 55px rgba(118, 75, 162, 0.45);
         }
         .btn:active { transform: scale(0.97); }
-        .features {
-            display: grid;
-            gap: 1rem;
-            margin-bottom: 2.5rem;
+        .pill-grid {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 0.75rem;
+            width: 100%;
         }
-        .feature {
-            text-align: left;
-            padding: 0.25rem 0;
-            border-left: 2px solid rgba(255,255,255,0.15);
-            padding-left: 1rem;
+        .pill {
+            display: inline-flex;
+            flex-direction: column;
+            gap: 0.15rem;
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 18px;
+            padding: 0.75rem 1rem;
+            min-width: 140px;
+            max-width: 200px;
+            background: rgba(255,255,255,0.05);
+            box-shadow: 0 12px 25px rgba(0,0,0,0.25);
         }
-        .feature h3 {
-            margin: 0 0 0.4rem;
-            font-size: 1rem;
-            font-weight: 600;
-        }
-        .feature p {
-            margin: 0;
+        .pill span {
+            font-size: 0.8rem;
             color: var(--text-muted);
-            line-height: 1.5;
-            font-size: 0.95rem;
+            line-height: 1.3;
+        }
+        .pill strong {
+            font-size: 0.9rem;
         }
         footer {
             font-size: 0.85rem;
@@ -201,7 +213,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
         <h1>DisTask</h1>
         <p class=\"lede\">Orchestrate disciplined Discord workflows with kanban clarity, slash-command speed, and reliable reminders that keep every guild project humming.</p>
-        <p class=\"status-desc\" id=\"status-desc\">Connecting to bot service…</p>
         <div class=\"cta-group\">
             <a class=\"btn btn-primary\" href=\"{{INVITE_URL}}\" target=\"_blank\" rel=\"noopener\">
                 <i data-lucide=\"zap\" class=\"icon\"></i>
@@ -212,22 +223,22 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 Explore Docs
             </a>
         </div>
-        <div class=\"features\">
-            <div class=\"feature\">
-                <h3>Automated Boards</h3>
-                <p>Spin up kanban boards, columns, and precision task flows inside Discord.</p>
+        <div class=\"pill-grid\">
+            <div class=\"pill\">
+                <strong>Boards</strong>
+                <span>Kanban flows fully inside Discord.</span>
             </div>
-            <div class=\"feature\">
-                <h3>Smart Reminders</h3>
-                <p>Digest alerts track overdue work and upcoming deadlines without noise.</p>
+            <div class=\"pill\">
+                <strong>Reminders</strong>
+                <span>Digest alerts surface deadlines.</span>
             </div>
-            <div class=\"feature\">
-                <h3>Rich Permissions</h3>
-                <p>Respect server roles by gating board, task, and notification commands.</p>
+            <div class=\"pill\">
+                <strong>Permissions</strong>
+                <span>Respect server roles for every action.</span>
             </div>
-            <div class=\"feature\">
-                <h3>Open & Extensible</h3>
-                <p>MIT-licensed core with async utilities ready for your workflow ideas.</p>
+            <div class=\"pill\">
+                <strong>Extensible</strong>
+                <span>MIT core, async utilities, limitless ideas.</span>
             </div>
         </div>
         <footer>
@@ -253,7 +264,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         async function refreshStatus() {
             const dot = document.getElementById('status-dot');
             const label = document.getElementById('status-label');
-            const desc = document.getElementById('status-desc');
             try {
                 const res = await fetch(`/status?ts=${Date.now()}`);
                 if (!res.ok) throw new Error('Bad status');
@@ -261,11 +271,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 dot.style.background = data.color;
                 dot.style.boxShadow = `0 0 16px ${data.color}`;
                 label.textContent = data.label;
-                desc.textContent = data.message;
             } catch (err) {
                 dot.style.background = 'var(--status-down)';
                 label.textContent = 'Status Unknown';
-                desc.textContent = 'Unable to reach the monitoring service. Please retry.';
             }
         }
         document.addEventListener('DOMContentLoaded', () => {
