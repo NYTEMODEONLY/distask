@@ -5,6 +5,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=%h/distask
+EnvironmentFile=%h/distask/.env
 Environment=PYTHONUNBUFFERED=1
 ExecStart=%h/distask/.venv/bin/uvicorn web.app:app --host 127.0.0.1 --port 8000
 Restart=always

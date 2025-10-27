@@ -49,6 +49,7 @@ distask/
 
    - Copy `.env.example` → `.env`.
    - Fill in `token` with your bot token (keep it private!).
+   - Add `discord_client_id` (used for invite URLs) and, if you plan to run OAuth flows, `discord_client_secret`. These are optional but keep the landing-page CTA up to date.
    - Adjust `database_path`, `log_file`, or `reminder_time` if desired.
 
 3. **Run the bot locally**:

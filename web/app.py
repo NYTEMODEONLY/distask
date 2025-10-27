@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -11,7 +12,10 @@ APP_DIR = Path(__file__).resolve().parent
 
 app = FastAPI(title="DisTask Landing", docs_url=None, redoc_url=None)
 
-HTML = """<!DOCTYPE html>
+CLIENT_ID = os.getenv("DISCORD_CLIENT_ID", "1432225946219450449")
+INVITE_URL = os.getenv("DISCORD_INVITE_URL") or f"https://discord.com/oauth2/authorize?client_id={CLIENT_ID}&scope=bot%20applications.commands"
+
+HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang=\"en\">
 <head>
     <meta charset=\"UTF-8\" />
@@ -215,7 +219,7 @@ HTML = """<!DOCTYPE html>
             <p class=\"lede\">Orchestrate disciplined Discord workflows with kanban clarity, slash-command speed, and reliable reminders that keep every guild project humming.</p>
             <p class=\"status-desc\" id=\"status-desc\">Connecting to bot service…</p>
             <div class=\"cta-group\">
-                <a class=\"btn btn-primary\" href=\"https://discord.com/oauth2/authorize?client_id=YOUR_CLIENT_ID&scope=bot%20applications.commands\" target=\"_blank\" rel=\"noopener\">
+                <a class=\"btn btn-primary\" href=\"{{INVITE_URL}}\" target=\"_blank\" rel=\"noopener\">
                     <i data-lucide=\"zap\" class=\"icon\"></i>
                     Deploy to Discord
                 </a>
@@ -291,6 +295,8 @@ HTML = """<!DOCTYPE html>
 </body>
 </html>
 """
+
+HTML = HTML_TEMPLATE.replace("{{INVITE_URL}}", INVITE_URL)
 
 
 @app.get("/", response_class=HTMLResponse)
