@@ -1,0 +1,15 @@
+[Unit]
+Description=DisTask Discord Bot
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/distask
+EnvironmentFile=%h/distask/.env
+ExecStart=/usr/bin/env python3 bot.py
+Restart=always
+RestartSec=5
+User=%i
+
+[Install]
+WantedBy=multi-user.target
