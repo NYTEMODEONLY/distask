@@ -76,6 +76,22 @@ class Database:
                 """,
                 "CREATE INDEX IF NOT EXISTS idx_tasks_board ON tasks(board_id)",
                 "CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(due_date)",
+                """
+                CREATE TABLE IF NOT EXISTS feature_requests (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    guild_id BIGINT NOT NULL REFERENCES guilds(guild_id) ON DELETE CASCADE,
+                    title TEXT NOT NULL,
+                    suggestion TEXT NOT NULL,
+                    suggested_priority TEXT,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    priority INTEGER,
+                    ease_of_implementation INTEGER,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    completed_at TIMESTAMP
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_feature_requests_guild ON feature_requests(guild_id)",
             ]
             for statement in schema_statements:
                 await conn.execute(statement)
@@ -393,6 +409,36 @@ class Database:
 
     async def toggle_complete(self, task_id: int, completed: bool) -> bool:
         return await self.update_task(task_id, completed=completed)
+
+    async def create_feature_request(
+        self,
+        *,
+        user_id: int,
+        guild_id: int,
+        title: str,
+        suggestion: str,
+        suggested_priority: Optional[str],
+    ) -> int:
+        await self.ensure_guild(guild_id)
+        row = await self._execute(
+            """
+            INSERT INTO feature_requests (user_id, guild_id, title, suggestion, suggested_priority)
+            VALUES ($1, $2, $3, $4, $5)
+            RETURNING id
+            """,
+            (user_id, guild_id, title, suggestion, suggested_priority),
+            fetchone=True,
+        )
+        if not row:
+            raise RuntimeError("Failed to store feature request")
+        return row["id"]
+
+    async def fetch_feature_requests(self) -> List[Dict[str, Any]]:
+        rows = await self._execute(
+            "SELECT * FROM feature_requests ORDER BY created_at DESC",
+            fetchall=True,
+        )
+        return [dict(row) for row in rows or []]
 
     async def _execute(
         self,

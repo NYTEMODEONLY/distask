@@ -9,6 +9,7 @@ DisTask is a production-ready Discord bot that provides lightweight kanban board
 - ✅ **Custom columns** beyond the To Do / In Progress / Done defaults
 - ✅ **Task lifecycle tools**: assign, move, edit, complete, delete, and full-text search
 - ✅ **Due dates + reminders**: background worker posts daily digests to board channels
+- ✅ **Feature requests**: `/request-feature` modal logs ideas and syncs them to GitHub
 - ✅ **Permission-aware administration** (`Manage Guild`/`Manage Channels` checks where appropriate)
 - ✅ **Structured embeds & logging** (console + rotating file target)
 - ✅ **Systemd unit** for 24/7 hosting on Linux
@@ -24,12 +25,14 @@ distask/
 ├── cogs/                # Slash command groups
 │   ├── boards.py        # /create-board, /list-boards, etc.
 │   ├── tasks.py         # /add-task, /move-task, /search-task, ...
-│   └── admin.py         # /add-column, /toggle-notifications, ...
+│   ├── admin.py         # /add-column, /toggle-notifications, ...
+│   └── features.py      # /request-feature modal + GitHub export trigger
 ├── utils/               # Shared helpers
 │   ├── db.py            # Async PostgreSQL wrapper + schema management
 │   ├── embeds.py        # Embed builders
 │   ├── validators.py    # Input validation + parsing
-│   └── reminders.py     # Background reminder scheduler
+│   ├── reminders.py     # Background reminder scheduler
+│   └── github_utils.py  # GitHub Markdown export helper
 ├── LICENSE              # MIT
 ├── scripts/             # Operational tooling
 │   └── migrate_sqlite_to_postgres.py  # One-time migration helper
@@ -52,6 +55,7 @@ distask/
    - Copy `.env.example` → `.env`.
    - Fill in `token` with your bot token (keep it private!).
    - Add `discord_client_id` (used for invite URLs) and, if you plan to run OAuth flows, `discord_client_secret`. These are optional but keep the landing-page CTA up to date.
+   - Configure `github_token`, `repo_owner`, and `repo_name` so feature requests can be published to your GitHub repo. The token needs `repo` scope.
    - Adjust `database_url`, `log_file`, or `reminder_time` if desired. The URL should follow the PostgreSQL DSN format (`postgresql://user:password@host:port/database`).
 
 3. **Run the bot locally**:
@@ -86,11 +90,13 @@ distask/
 |        | `/toggle-notifications` | Enable/disable reminder digests | Manage Guild |
 |        | `/set-reminder` | Set daily reminder time (HH:MM UTC) | Manage Guild |
 |        | `/distask-help` | Summary of commands | — |
+| Feedback | `/request-feature` | Submit feature ideas via modal; syncs to GitHub | — |
 
 Additional behavior:
 
 - Default rate limit is 1 call / 3s per user. Heavy commands (`/create-board`, `/add-task`, `/search-task`, `/edit-task`) use 10s cooldowns.
 - Reminder digests run roughly once per minute and deliver a daily summary (overdue + next 24h) to each board channel when the guild's scheduled time passes. Use `/toggle-notifications` + `/set-reminder` to control behavior per guild.
+- Feature requests persist to the `feature_requests` table. When GitHub credentials are configured, the bot publishes the backlog to `feature_requests.md` via the GitHub Contents API.
 
 ## Systemd Deployment
 

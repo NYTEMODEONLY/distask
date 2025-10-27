@@ -32,6 +32,9 @@ def load_config() -> Dict[str, Any]:
         "database_url": str(db_url),
         "log_file": str(log_file),
         "reminder_time": reminder_time,
+        "github_token": os.getenv("GITHUB_TOKEN") or os.getenv("github_token"),
+        "repo_owner": os.getenv("REPO_OWNER") or os.getenv("repo_owner") or "NYTEMODEONLY",
+        "repo_name": os.getenv("REPO_NAME") or os.getenv("repo_name") or "distask",
     }
     return config
 
@@ -65,6 +68,7 @@ class DisTaskBot(commands.Bot):
         await self.db.init()
         await self.add_cog(self._build_boards_cog())
         await self.add_cog(self._build_tasks_cog())
+        await self.add_cog(self._build_features_cog())
         await self.add_cog(self._build_admin_cog())
         await self.tree.sync()
         await self.reminders.start()
@@ -121,6 +125,18 @@ class DisTaskBot(commands.Bot):
         from cogs.admin import AdminCog
 
         return AdminCog(self, self.db, self.embeds)
+
+    def _build_features_cog(self) -> commands.Cog:
+        from cogs.features import FeaturesCog
+
+        return FeaturesCog(
+            self,
+            self.db,
+            self.embeds,
+            github_token=self.config.get("github_token"),
+            repo_owner=self.config.get("repo_owner"),
+            repo_name=self.config.get("repo_name"),
+        )
 
 
 def main() -> None:
