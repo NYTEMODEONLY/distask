@@ -1,5 +1,5 @@
 discord.py>=2.3
-aiosqlite>=0.20
+asyncpg>=0.29
 python-dotenv>=1.0
 python-dateutil>=2.8
 fastapi>=0.115

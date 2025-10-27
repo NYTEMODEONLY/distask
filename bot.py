@@ -20,12 +20,16 @@ def load_config() -> Dict[str, Any]:
     token = os.getenv("TOKEN") or os.getenv("token")
     if not token:
         raise RuntimeError("Discord token missing. Provide TOKEN in the environment or .env file.")
-    db_path = os.getenv("DATABASE_PATH") or os.getenv("database_path") or BASE_DIR / "data" / "distask.db"
+    db_url = (
+        os.getenv("DATABASE_URL")
+        or os.getenv("database_url")
+        or "postgresql://distask:distaskpass@localhost:5432/distask"
+    )
     log_file = os.getenv("LOG_FILE") or os.getenv("log_file") or BASE_DIR / "logs" / "distask.log"
     reminder_time = os.getenv("REMINDER_TIME") or os.getenv("reminder_time") or "09:00"
     config = {
         "token": token,
-        "database_path": str(db_path),
+        "database_url": str(db_url),
         "log_file": str(log_file),
         "reminder_time": reminder_time,
     }
@@ -52,7 +56,7 @@ class DisTaskBot(commands.Bot):
         super().__init__(command_prefix="/", intents=intents)
         self.config = config
         self.logger = logging.getLogger("distask.bot")
-        self.db = Database(config["database_path"], default_reminder=config["reminder_time"])
+        self.db = Database(config["database_url"], default_reminder=config["reminder_time"])
         self.embeds = EmbedFactory()
         self.reminders = ReminderScheduler(self, self.db, self.embeds, logging.getLogger("distask.reminders"))
         self.tree.on_error = self.on_app_command_error
@@ -75,6 +79,7 @@ class DisTaskBot(commands.Bot):
 
     async def close(self) -> None:
         await self.reminders.stop()
+        await self.db.close()
         await super().close()
 
     async def on_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError) -> None:

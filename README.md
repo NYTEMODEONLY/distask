@@ -50,7 +50,7 @@ distask/
    - Copy `.env.example` → `.env`.
    - Fill in `token` with your bot token (keep it private!).
    - Add `discord_client_id` (used for invite URLs) and, if you plan to run OAuth flows, `discord_client_secret`. These are optional but keep the landing-page CTA up to date.
-   - Adjust `database_path`, `log_file`, or `reminder_time` if desired.
+   - Adjust `database_url`, `log_file`, or `reminder_time` if desired. The URL should follow the PostgreSQL DSN format (`postgresql://user:password@host:port/database`).
 
 3. **Run the bot locally**:
 
@@ -58,7 +58,7 @@ distask/
    python bot.py
    ```
 
-   The first startup will create `data/distask.db` and `logs/distask.log` automatically.
+   The first startup will ensure the configured PostgreSQL database has the necessary tables and will create `logs/distask.log` automatically.
 
 4. **Invite the bot** with the `applications.commands` scope (and `bot` scope if you want reminder messages). Make sure the bot has access to the channels you plan to use for boards.
 
@@ -122,7 +122,7 @@ The API simply shells out to `systemctl show distask.service`, so the status bad
 
 ## Development Notes
 
-- **Database**: SQLite is stored wherever `database_path` points. Each guild can host multiple boards; deleting a board cascades to columns/tasks.
+- **Database**: PostgreSQL is used for multi-guild scalability. Configure the connection string via `DATABASE_URL`. Table relationships enforce cascading deletes so columns/tasks clean up with their parent board.
 - **Logging**: Both stdout and the configured file receive structured logs. Adjust `setup_logging` in `bot.py` if you prefer RotatingFileHandler, etc.
 - **Credentials**: If you push over HTTPS, configure a credential helper (e.g. `git config credential.helper store`) so Personal Access Tokens persist between sessions and non-interactive pushes continue to work.
 - **Extensibility**: New slash commands can be added in the existing cogs or by creating additional cogs and registering them in `bot.py`.
