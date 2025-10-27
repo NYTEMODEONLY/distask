@@ -25,7 +25,7 @@ PAGE_DESCRIPTION = os.getenv(
 )
 CARD_IMAGE = os.getenv(
     "DISTASK_CARD_IMAGE",
-    f"{SITE_URL}/static/distask-logo.png",
+    f"{SITE_URL}/static/distask-thumb.png",
 )
 
 HTML_TEMPLATE = """<!DOCTYPE html>
@@ -41,9 +41,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <meta property=\"og:description\" content=\"{{DESCRIPTION}}\" />
     <meta property=\"og:image\" content=\"{{CARD_IMAGE}}\" />
     <meta property=\"og:image:type\" content=\"image/png\" />
-    <meta property=\"og:image:width\" content=\"1024\" />
-    <meta property=\"og:image:height\" content=\"1024\" />
-    <meta name=\"twitter:card\" content=\"summary_large_image\" />
+    <meta property=\"og:image:width\" content=\"256\" />
+    <meta property=\"og:image:height\" content=\"256\" />
+    <meta name=\"twitter:card\" content=\"summary\" />
     <meta name=\"twitter:title\" content=\"DisTask · Discord Workflows\" />
     <meta name=\"twitter:description\" content=\"{{DESCRIPTION}}\" />
     <meta name=\"twitter:image\" content=\"{{CARD_IMAGE}}\" />
