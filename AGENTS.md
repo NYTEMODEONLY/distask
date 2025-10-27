@@ -12,7 +12,7 @@
 - `python -m venv .venv` followed by `source .venv/bin/activate` prepares an isolated environment.
 - `.venv/bin/pip install -r requirements.txt` installs Discord bot and web dependencies.
 - `python bot.py` starts the bot and ensures the configured PostgreSQL schema + default board columns exist.
-- `python scripts/feature_agent.py` runs the backlog automation pass (requires DB + git access). The VPS also runs it nightly at 03:30 CST via `distask-feature-agent.timer`.
+- `python scripts/feature_agent.py` runs the backlog automation pass (requires DB + git access). The VPS also runs it nightly at 03:30 CST via `distask-feature-agent.timer` (install with `sudo cp distask-feature-agent.* /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now distask-feature-agent.timer`).
 - `uvicorn web.app:app --reload` runs the status site locally on `http://127.0.0.1:8000`.
 - `tail -f logs/distask.log` streams structured logs for troubleshooting instead of ad-hoc prints.
 

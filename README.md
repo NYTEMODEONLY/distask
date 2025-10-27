@@ -125,6 +125,37 @@ The agent maintains its own cursor (`data/feature_agent_state.json`, ignored by 
 - Post-deploy, re-run the agent to confirm the request is marked as live and the queue reflects the next priority item.
 - The VPS now runs the automation nightly at 03:30 CST via `distask-feature-agent.timer`. Manually trigger a run any time with `sudo systemctl start distask-feature-agent.service`.
 
+### Installing the Timer on a Fresh Host
+
+1. Copy the provided systemd unit files from the repo root:
+
+   ```bash
+   sudo cp distask-feature-agent.service /etc/systemd/system/
+   sudo cp distask-feature-agent.timer /etc/systemd/system/
+   sudo systemctl daemon-reload
+   ```
+
+2. Enable the nightly schedule (03:30 CST / 08:30 UTC) and start it immediately:
+
+   ```bash
+   sudo systemctl enable --now distask-feature-agent.timer
+   ```
+
+3. Kick off an on-demand run whenever needed:
+
+   ```bash
+   sudo systemctl start distask-feature-agent.service
+   ```
+
+4. Check status or the last execution time:
+
+   ```bash
+   systemctl status distask-feature-agent.timer
+   journalctl -u distask-feature-agent.service --since "1 day ago"
+   ```
+
+Because the agent is idempotent, multiple runs per day simply refresh duplicate detection, recalculate scores, and sync completed requests without disturbing existing data.
+
 ## Systemd Deployment
 
 A starter service file (`distask.service`) is provided. To use it:
