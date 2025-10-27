@@ -12,9 +12,11 @@ build/
 
 # Virtual environments
 .env
-.venv
 venv/
 ENV/
+.venv/
+data/
+logs/
 
 # IDEs
 .vscode/

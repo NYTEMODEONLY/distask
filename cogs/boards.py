@@ -75,7 +75,7 @@ class BoardsCog(commands.Cog):
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="delete-board", description="Delete a board and all its tasks")
-    @app_commands.autocomplete(board=self.board_autocomplete)
+    @app_commands.autocomplete(board=board_autocomplete)
     @app_commands.checks.has_permissions(manage_guild=True)
     @app_commands.checks.cooldown(1, 10.0)
     async def delete_board(self, interaction: discord.Interaction, board: str) -> None:
@@ -88,7 +88,7 @@ class BoardsCog(commands.Cog):
             await interaction.followup.send("Board not found.", ephemeral=True)
 
     @app_commands.command(name="view-board", description="View a board's configuration")
-    @app_commands.autocomplete(board=self.board_autocomplete)
+    @app_commands.autocomplete(board=board_autocomplete)
     @app_commands.checks.cooldown(1, 3.0)
     async def view_board(self, interaction: discord.Interaction, board: str) -> None:
         board_data = await self._resolve_board(interaction, board)
@@ -98,7 +98,7 @@ class BoardsCog(commands.Cog):
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="board-stats", description="Show quick stats for a board")
-    @app_commands.autocomplete(board=self.board_autocomplete)
+    @app_commands.autocomplete(board=board_autocomplete)
     @app_commands.checks.cooldown(1, 3.0)
     async def board_stats(self, interaction: discord.Interaction, board: str) -> None:
         board_data = await self._resolve_board(interaction, board)

@@ -94,7 +94,7 @@ Additional behavior:
 A starter service file (`distask.service`) is provided. To use it:
 
 1. Copy the project to the target host (e.g., `/opt/distask`).
-2. Update the service file paths (`WorkingDirectory`, `EnvironmentFile`, `ExecStart`) to match your setup.
+2. Update the service file paths (`WorkingDirectory`, `EnvironmentFile`, `ExecStart`) to match your setup; keep the `.env` file outside version control so your Discord token stays private.
 3. Install and enable:
 
    ```bash
@@ -115,3 +115,5 @@ A starter service file (`distask.service`) is provided. To use it:
 ## License
 
 Released under the [MIT License](LICENSE).
+
+<sub>This project is [built by nytemode](https://nytemode.com).</sub>
