@@ -35,3 +35,4 @@
 - Copy `.env.example` to `.env`, store secrets outside git, and point systemd units at that file.
 - Run services as a non-root user and restrict access to `data/` and `logs/`.
 - Update the invite URL in `web/app.py` whenever the `discord_client_id` changes.
+- Last updated: $(date) - Verified commit process working correctly.
