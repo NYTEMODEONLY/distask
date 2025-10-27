@@ -85,16 +85,21 @@ class DisTaskBot(commands.Bot):
         else:
             send = interaction.response.send_message
             kwargs = {"ephemeral": True}
+
         if isinstance(error, app_commands.CommandOnCooldown):
-            await send(f"Slow down! Try again in {error.retry_after:.1f}s.", **kwargs)
+            embed = self.embeds.message("Cooldown", f"Try again in {error.retry_after:.1f}s.", emoji="⏳")
+            await send(embed=embed, **kwargs)
             return
         if isinstance(error, app_commands.MissingPermissions):
-            await send("You lack the required permissions for this command.", **kwargs)
+            embed = self.embeds.message("Insufficient Permissions", "You don't have the required Discord permissions.", emoji="🚫")
+            await send(embed=embed, **kwargs)
             return
         if isinstance(error, app_commands.AppCommandError) and not isinstance(error, app_commands.CommandInvokeError):
-            await send(str(error), **kwargs)
+            embed = self.embeds.message("Command Error", str(error), emoji="⚠️")
+            await send(embed=embed, **kwargs)
             return
-        await send("Something went wrong while running that command.", **kwargs)
+        embed = self.embeds.message("Unexpected Error", "Something went wrong while running that command.", emoji="🔥")
+        await send(embed=embed, **kwargs)
         self.logger.exception("App command error: %s", error)
 
     def _build_boards_cog(self) -> commands.Cog:
@@ -110,7 +115,7 @@ class DisTaskBot(commands.Bot):
     def _build_admin_cog(self) -> commands.Cog:
         from cogs.admin import AdminCog
 
-        return AdminCog(self, self.db)
+        return AdminCog(self, self.db, self.embeds)
 
 
 def main() -> None:

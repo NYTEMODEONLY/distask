@@ -50,11 +50,17 @@ class BoardsCog(commands.Cog):
     ) -> None:
         validation = Validator.board_name(name)
         if not validation.ok:
-            await interaction.response.send_message(validation.message, ephemeral=True)
+            await interaction.response.send_message(
+                embed=self.embeds.message("Invalid Board Name", validation.message, emoji="⚠️"),
+                ephemeral=True,
+            )
             return
         existing = await self.db.get_board_by_name(interaction.guild_id, name.strip())
         if existing:
-            await interaction.response.send_message("A board with that name already exists.", ephemeral=True)
+            await interaction.response.send_message(
+                embed=self.embeds.message("Duplicate Board", "Choose a unique board name for this server.", emoji="🛑"),
+                ephemeral=True,
+            )
             return
         await interaction.response.defer(ephemeral=True, thinking=True)
         board_id = await self.db.create_board(interaction.guild_id, channel.id, name.strip(), description, interaction.user.id)
@@ -62,13 +68,17 @@ class BoardsCog(commands.Cog):
         columns = await self.db.fetch_columns(board_id)
         stats = await self.db.board_stats(board_id)
         embed = self.embeds.board_detail(board, columns, stats)
-        await interaction.followup.send(f"Board created in {channel.mention}", embed=embed, ephemeral=True)
+        embed.add_field(name="Updates Channel", value=channel.mention, inline=False)
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="list-boards", description="List all boards in this server")
     @app_commands.checks.cooldown(1, 3.0)
     async def list_boards(self, interaction: discord.Interaction) -> None:
         if not interaction.guild:
-            await interaction.response.send_message("This command can only be used in servers.", ephemeral=True)
+            await interaction.response.send_message(
+                embed=self.embeds.message("Guild Only", "Join a server to manage boards.", emoji="⚠️"),
+                ephemeral=True,
+            )
             return
         boards = await self.db.fetch_boards(interaction.guild_id)
         embed = self.embeds.board_list(interaction.guild.name, boards)
@@ -83,9 +93,15 @@ class BoardsCog(commands.Cog):
         await interaction.response.defer(ephemeral=True, thinking=True)
         deleted = await self.db.delete_board(interaction.guild_id, board_data["id"])
         if deleted:
-            await interaction.followup.send(f"Deleted board **{board_data['name']}**", ephemeral=True)
+            await interaction.followup.send(
+                embed=self.embeds.message("Board Deleted", f"**{board_data['name']}** has been archived.", emoji="🗑️"),
+                ephemeral=True,
+            )
         else:
-            await interaction.followup.send("Board not found.", ephemeral=True)
+            await interaction.followup.send(
+                embed=self.embeds.message("Not Found", "Unable to locate that board.", emoji="⚠️"),
+                ephemeral=True,
+            )
 
     @app_commands.command(name="view-board", description="View a board's configuration")
     @app_commands.autocomplete(board=board_autocomplete)
@@ -103,13 +119,17 @@ class BoardsCog(commands.Cog):
     async def board_stats(self, interaction: discord.Interaction, board: str) -> None:
         board_data = await self._resolve_board(interaction, board)
         stats = await self.db.board_stats(board_data["id"])
-        message = (
-            f"**{board_data['name']}**\n"
-            f"Total tasks: {stats['total']}\n"
-            f"Complete: {stats['completed']}\n"
-            f"Overdue: {stats['overdue']}"
+        embed = self.embeds.message(
+            "Board Pulse",
+            (
+                f"**{board_data['name']}**\n"
+                f"• Total: {stats['total']}\n"
+                f"• Complete: {stats['completed']}\n"
+                f"• Overdue: {stats['overdue']}"
+            ),
+            emoji="📊",
         )
-        await interaction.response.send_message(message, ephemeral=True)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
     async def _resolve_board(self, interaction: discord.Interaction, board_value: str):
         if not interaction.guild_id:
