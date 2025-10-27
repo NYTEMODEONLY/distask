@@ -6,7 +6,7 @@ from typing import Any, Dict, Iterable, List, Optional
 import discord
 
 DATE_FORMAT = "%b %d, %Y %H:%M UTC"
-FOOTER_TEXT = "distask.xyz • https://distask.xyz"
+FOOTER_TEXT = "distask.xyz"
 DEFAULT_COLOR = discord.Color.from_rgb(118, 75, 162)
 
 
