@@ -156,6 +156,26 @@ The agent maintains its own cursor (`data/feature_agent_state.json`, ignored by 
 
 Because the agent is idempotent, multiple runs per day simply refresh duplicate detection, recalculate scores, and sync completed requests without disturbing existing data.
 
+### GitHub Authentication & PAT Rotation
+
+Both the bot and the automation rely on a Personal Access Token (PAT) with `repo` scope. To keep pushes and Markdown exports working after a reboot:
+
+1. Store the token in `.env` under `github_token` (and ensure `distask.service` / `distask-feature-agent.service` load that file).
+2. Configure git to persist the PAT locally so manual `git push` calls and automation commits survive restarts:
+
+   ```bash
+   git config --global credential.helper store
+   git credential approve <<'EOF'
+   protocol=https
+   host=github.com
+   username=YOUR_GITHUB_USERNAME
+   password=YOUR_PAT
+   EOF
+   chmod 600 ~/.git-credentials
+   ```
+
+When the PAT expires (e.g., 30-day tokens), repeat both steps with the new value. Restart the bot and feature-agent timer to pick up the refreshed `.env`.
+
 ## Systemd Deployment
 
 A starter service file (`distask.service`) is provided. To use it:

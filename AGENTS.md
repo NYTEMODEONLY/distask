@@ -16,6 +16,24 @@
 - `uvicorn web.app:app --reload` runs the status site locally on `http://127.0.0.1:8000`.
 - `tail -f logs/distask.log` streams structured logs for troubleshooting instead of ad-hoc prints.
 
+### GitHub Credentials
+
+- Keep `github_token` in `.env`; restart services after rotating the PAT.
+- Persist the PAT for git pushes with the credential helper so commits survive restarts:
+
+  ```bash
+  git config --global credential.helper store
+  git credential approve <<'EOF'
+  protocol=https
+  host=github.com
+  username=YOUR_GITHUB_USERNAME
+  password=YOUR_PAT
+  EOF
+  chmod 600 ~/.git-credentials
+  ```
+
+- When the PAT expires, repeat both the `.env` update and credential helper step with the new token.
+
 ## Coding Style & Naming Conventions
 - Use 4-space indentation, PEP 8 spacing, and keep imports ordered stdlib → third-party → local.
 - Annotate new functions with type hints; prefer `async def` for Discord handlers and explicit return types.
