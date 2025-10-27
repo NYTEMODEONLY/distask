@@ -42,19 +42,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             --status-degraded: #f6c177;
         }
         * { box-sizing: border-box; }
-        html, body {
-            height: 100%;
-            overflow: hidden;
-        }
         body {
             margin: 0;
             font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
             background: var(--bg-base);
             color: var(--text-primary);
+            min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 1.5rem;
+            padding: clamp(1.25rem, 5vw, 2.75rem);
         }
         body::before {
             content: '';
@@ -73,14 +70,17 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            gap: 1.2rem;
-            height: 100%;
-            max-height: 640px;
+            gap: clamp(0.75rem, 3vh, 1.2rem);
             margin: 0 auto;
+            padding: clamp(1rem, 4vh, 2.5rem) clamp(0.75rem, 4vw, 2rem);
+            background: rgba(8, 5, 16, 0.4);
+            border-radius: 36px;
+            box-shadow: 0 28px 80px rgba(5, 3, 12, 0.55);
+            backdrop-filter: blur(18px);
         }
         h1 {
             font-size: clamp(2.25rem, 8vw, 4rem);
-            margin: 0 0 1.25rem;
+            margin: 0 0 clamp(0.65rem, 2vh, 1.1rem);
             font-weight: 800;
             letter-spacing: -0.02em;
             background: linear-gradient(120deg, var(--gradient-start), var(--gradient-end));
@@ -90,11 +90,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             animation: gradient-shift 6s ease-in-out infinite;
         }
         p.lede {
-            font-size: 1.05rem;
+            font-size: clamp(0.95rem, 2.8vw, 1.05rem);
             color: var(--text-muted);
-            margin: 0 auto 2rem;
-            line-height: 1.7;
-            max-width: 48ch;
+            margin: 0 auto clamp(1.1rem, 3vh, 1.8rem);
+            line-height: 1.65;
+            max-width: clamp(36ch, 80%, 48ch);
         }
         .status-pill {
             display: inline-flex;
@@ -102,11 +102,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             gap: 0.5rem;
             border-radius: 999px;
             border: 1px solid rgba(255,255,255,0.15);
-            padding: 0.45rem 1.1rem;
+            padding: 0.4rem 1rem;
             background: rgba(255,255,255,0.06);
-            font-size: 0.95rem;
+            font-size: clamp(0.85rem, 2.5vw, 0.95rem);
             font-weight: 500;
-            margin-bottom: 1.5rem;
+            margin-bottom: clamp(1rem, 3vh, 1.35rem);
         }
         .logo-frame {
             width: clamp(96px, 18vw, 132px);
@@ -223,6 +223,50 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }
         @media (prefers-reduced-motion: reduce) {
             *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
+        }
+        @media (max-width: 640px) {
+            main {
+                border-radius: 28px;
+                box-shadow: 0 20px 60px rgba(5, 3, 12, 0.5);
+            }
+            .pill {
+                min-width: calc(50% - 0.75rem);
+                max-width: none;
+            }
+            .pill strong { font-size: 0.85rem; }
+            .pill span { font-size: 0.75rem; }
+        }
+        @media (max-width: 460px) {
+            body {
+                padding: clamp(1rem, 6vw, 1.75rem);
+            }
+            .cta-group {
+                gap: 0.65rem;
+            }
+            .btn {
+                width: 100%;
+                min-width: 0;
+            }
+            .pill {
+                min-width: 100%;
+            }
+        }
+        @media (max-height: 720px) {
+            main {
+                gap: 0.75rem;
+                padding-block: clamp(0.9rem, 3vh, 1.5rem);
+            }
+            .logo-frame {
+                margin-bottom: 1rem;
+                width: clamp(84px, 15vw, 120px);
+                height: clamp(84px, 15vw, 120px);
+            }
+            p.lede {
+                margin-bottom: clamp(0.85rem, 2vh, 1.3rem);
+            }
+            .pill-grid {
+                gap: 0.6rem;
+            }
         }
     </style>
 </head>
