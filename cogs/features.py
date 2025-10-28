@@ -63,7 +63,6 @@ class FeatureRequestModal(discord.ui.Modal):
                 "Something went wrong while processing your feature request. Please try again later.",
                 emoji="🔥",
             ),
-            ephemeral=True,
         )
 
 
@@ -96,7 +95,6 @@ class FeaturesCog(commands.Cog):
                     "Please run /request-feature inside a Discord server.",
                     emoji="🏠",
                 ),
-                ephemeral=True,
             )
             return
         await interaction.response.send_modal(FeatureRequestModal(self))
@@ -117,7 +115,6 @@ class FeaturesCog(commands.Cog):
                     "Feature requests must be submitted from a server context.",
                     emoji="🏠",
                 ),
-                ephemeral=True,
             )
             return
 
@@ -132,7 +129,6 @@ class FeaturesCog(commands.Cog):
                     "Both the feature title and detailed suggestion are required.",
                     emoji="⚠️",
                 ),
-                ephemeral=True,
             )
             return
 
@@ -152,7 +148,6 @@ class FeaturesCog(commands.Cog):
                     "Couldn't record your feature request right now. Please try again later.",
                     emoji="🔥",
                 ),
-                ephemeral=True,
             )
             return
 
@@ -165,7 +160,7 @@ class FeaturesCog(commands.Cog):
             emoji="✨",
         )
         embed.add_field(name="Request ID", value=str(request_id), inline=False)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message(embed=embed)
 
         await self._export_feature_requests()
 

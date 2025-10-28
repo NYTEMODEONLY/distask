@@ -88,27 +88,24 @@ class DisTaskBot(commands.Bot):
 
     async def on_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError) -> None:
         if interaction.response.is_done():
-            sender = interaction.followup
-            kwargs = {"ephemeral": True}
-            send = sender.send
+            send = interaction.followup.send
         else:
             send = interaction.response.send_message
-            kwargs = {"ephemeral": True}
 
         if isinstance(error, app_commands.CommandOnCooldown):
             embed = self.embeds.message("Cooldown", f"Try again in {error.retry_after:.1f}s.", emoji="⏳")
-            await send(embed=embed, **kwargs)
+            await send(embed=embed)
             return
         if isinstance(error, app_commands.MissingPermissions):
             embed = self.embeds.message("Insufficient Permissions", "You don't have the required Discord permissions.", emoji="🚫")
-            await send(embed=embed, **kwargs)
+            await send(embed=embed)
             return
         if isinstance(error, app_commands.AppCommandError) and not isinstance(error, app_commands.CommandInvokeError):
             embed = self.embeds.message("Command Error", str(error), emoji="⚠️")
-            await send(embed=embed, **kwargs)
+            await send(embed=embed)
             return
         embed = self.embeds.message("Unexpected Error", "Something went wrong while running that command.", emoji="🔥")
-        await send(embed=embed, **kwargs)
+        await send(embed=embed)
         self.logger.exception("App command error: %s", error)
 
     def _build_boards_cog(self) -> commands.Cog:

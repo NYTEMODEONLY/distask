@@ -1,0 +1,45 @@
+{
+  "generated_at": "2025-10-28T00:34:55Z",
+  "items": [
+    {
+      "id": 1,
+      "title": "Duplicate requests",
+      "score": 10.0,
+      "priority": 5,
+      "ease": 5,
+      "status": "pending",
+      "duplicate_of": null,
+      "notes": null
+    },
+    {
+      "id": 2,
+      "title": "Lessen Ephemeral Messages",
+      "score": 10.0,
+      "priority": 5,
+      "ease": 5,
+      "status": "completed",
+      "duplicate_of": null,
+      "notes": "Completed in public-response rollout (2025-10-28)"
+    },
+    {
+      "id": 3,
+      "title": "Separate commands by global/local/other",
+      "score": 10.0,
+      "priority": 5,
+      "ease": 5,
+      "status": "pending",
+      "duplicate_of": null,
+      "notes": null
+    },
+    {
+      "id": 4,
+      "title": "Separate boards and tasks between channel/server",
+      "score": 10.0,
+      "priority": 5,
+      "ease": 5,
+      "status": "pending",
+      "duplicate_of": null,
+      "notes": null
+    }
+  ]
+}

@@ -86,10 +86,9 @@ class TasksCog(commands.Cog):
         if not validation.ok:
             await interaction.response.send_message(
                 embed=self.embeds.message("Invalid Title", validation.message, emoji="⚠️"),
-                ephemeral=True,
             )
             return
-        await interaction.response.defer(ephemeral=True, thinking=True)
+        await interaction.response.defer(thinking=True)
         columns = await self.db.fetch_columns(board_data["id"])
         target_column = await self._resolve_column(board_data["id"], columns, column)
         due_iso = None
@@ -99,7 +98,6 @@ class TasksCog(commands.Cog):
             except ValueError as exc:
                 await interaction.followup.send(
                     embed=self.embeds.message("Invalid Due Date", str(exc), emoji="⚠️"),
-                    ephemeral=True,
                 )
                 return
         task_id = await self.db.create_task(
@@ -114,7 +112,7 @@ class TasksCog(commands.Cog):
         task = await self.db.fetch_task(task_id)
         embed = self.embeds.task_detail(task, target_column["name"])
         embed.add_field(name="Board", value=board_data["name"], inline=False)
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="list-tasks", description="List tasks on a board")
     @app_commands.autocomplete(board=board_autocomplete, column=column_autocomplete)
@@ -140,7 +138,6 @@ class TasksCog(commands.Cog):
             if not column_data:
                 await interaction.response.send_message(
                     embed=self.embeds.message("Column Missing", "That column does not exist on this board.", emoji="⚠️"),
-                    ephemeral=True,
                 )
                 return
         column_id = column_data["id"] if column_data else None
@@ -153,7 +150,6 @@ class TasksCog(commands.Cog):
         if not tasks:
             await interaction.response.send_message(
                 embed=self.embeds.message("No Tasks", "Nothing matches those filters just yet.", emoji="📭"),
-                ephemeral=True,
             )
             return
         lines = [self._format_task_line(task) for task in tasks[:20]]
@@ -165,7 +161,7 @@ class TasksCog(commands.Cog):
             content,
             emoji="🗂️",
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="move-task", description="Move a task to another column")
     @app_commands.autocomplete(column=column_autocomplete)
@@ -177,7 +173,6 @@ class TasksCog(commands.Cog):
         await self.db.move_task(task_id, target_column["id"])
         await interaction.response.send_message(
             embed=self.embeds.message("Task Moved", f"#{task_id} → **{target_column['name']}**", emoji="🧭"),
-            ephemeral=True,
         )
 
     @app_commands.command(name="assign-task", description="Assign a task to a member")
@@ -187,7 +182,6 @@ class TasksCog(commands.Cog):
         await self.db.update_task(task_id, assignee_id=member.id)
         await interaction.response.send_message(
             embed=self.embeds.message("Task Assigned", f"#{task_id} now belongs to {member.mention}", emoji="👥"),
-            ephemeral=True,
         )
 
     @app_commands.command(name="edit-task", description="Update details for a task")
@@ -217,7 +211,6 @@ class TasksCog(commands.Cog):
             if not validation.ok:
                 await interaction.response.send_message(
                     embed=self.embeds.message("Invalid Title", validation.message, emoji="⚠️"),
-                    ephemeral=True,
                 )
                 return
             updates["title"] = title.strip()
@@ -232,7 +225,6 @@ class TasksCog(commands.Cog):
                 except ValueError as exc:
                     await interaction.response.send_message(
                         embed=self.embeds.message("Invalid Due Date", str(exc), emoji="⚠️"),
-                        ephemeral=True,
                     )
                     return
             else:
@@ -244,13 +236,11 @@ class TasksCog(commands.Cog):
         if not updates:
             await interaction.response.send_message(
                 embed=self.embeds.message("No Changes", "Provide at least one field to update.", emoji="⚠️"),
-                ephemeral=True,
             )
             return
         await self.db.update_task(task_id, **updates)
         await interaction.response.send_message(
             embed=self.embeds.message("Task Updated", f"Edits applied to task #{task_id}.", emoji="✨"),
-            ephemeral=True,
         )
 
     @app_commands.command(name="complete-task", description="Mark a task complete/incomplete")
@@ -262,7 +252,6 @@ class TasksCog(commands.Cog):
         emoji = "✅" if completed else "↩️"
         await interaction.response.send_message(
             embed=self.embeds.message("Task Status", f"Task #{task_id} {status}.", emoji=emoji),
-            ephemeral=True,
         )
 
     @app_commands.command(name="delete-task", description="Remove a task")
@@ -272,7 +261,6 @@ class TasksCog(commands.Cog):
         await self.db.delete_task(task_id)
         await interaction.response.send_message(
             embed=self.embeds.message("Task Deleted", f"Removed task #{task_id}.", emoji="🗑️"),
-            ephemeral=True,
         )
 
     @app_commands.command(name="search-task", description="Full-text search across tasks")
@@ -283,19 +271,17 @@ class TasksCog(commands.Cog):
         if not validation.ok:
             await interaction.response.send_message(
                 embed=self.embeds.message("Invalid Search", validation.message, emoji="⚠️"),
-                ephemeral=True,
             )
             return
         if not interaction.guild_id:
             await interaction.response.send_message(
                 embed=self.embeds.message("Guild Only", "Search must be run inside a server.", emoji="⚠️"),
-                ephemeral=True,
             )
             return
-        await interaction.response.defer(ephemeral=True, thinking=True)
+        await interaction.response.defer(thinking=True)
         results = await self.db.search_tasks(interaction.guild_id, query)
         embed = self.embeds.search_results(query, results)
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed)
 
     async def _resolve_board(self, interaction: discord.Interaction, board_value: str):
         if not interaction.guild_id:

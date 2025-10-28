@@ -63,13 +63,11 @@ class AdminCog(commands.Cog):
         if not validation.ok:
             await interaction.response.send_message(
                 embed=self.embeds.message("Invalid Column", validation.message, emoji="⚠️"),
-                ephemeral=True,
             )
             return
         await self.db.add_column(board_data["id"], name.strip())
         await interaction.response.send_message(
             embed=self.embeds.message("Column Added", f"**{name.strip()}** is now live.", emoji="➕"),
-            ephemeral=True,
         )
 
     @app_commands.command(name="remove-column", description="Remove a column (must be empty)")
@@ -84,18 +82,15 @@ class AdminCog(commands.Cog):
         except ValueError as exc:
             await interaction.response.send_message(
                 embed=self.embeds.message("Column Busy", str(exc), emoji="⚠️"),
-                ephemeral=True,
             )
             return
         if not removed:
             await interaction.response.send_message(
                 embed=self.embeds.message("Not Found", "That column does not exist.", emoji="⚠️"),
-                ephemeral=True,
             )
             return
         await interaction.response.send_message(
             embed=self.embeds.message("Column Removed", f"Deleted **{name}** from the board.", emoji="🗑️"),
-            ephemeral=True,
         )
 
     @app_commands.command(name="toggle-notifications", description="Enable or disable due reminders for this server")
@@ -106,14 +101,12 @@ class AdminCog(commands.Cog):
         if not interaction.guild_id:
             await interaction.response.send_message(
                 embed=self.embeds.message("Guild Only", "Run this inside a server.", emoji="⚠️"),
-                ephemeral=True,
             )
             return
         await self.db.set_notifications(interaction.guild_id, enabled)
         status = "enabled" if enabled else "disabled"
         await interaction.response.send_message(
             embed=self.embeds.message("Reminders", f"Digest pings {status}.", emoji="🔔"),
-            ephemeral=True,
         )
 
     @app_commands.command(name="set-reminder", description="Set the daily reminder time (UTC)")
@@ -125,19 +118,16 @@ class AdminCog(commands.Cog):
         if not validation.ok:
             await interaction.response.send_message(
                 embed=self.embeds.message("Invalid Time", validation.message, emoji="⚠️"),
-                ephemeral=True,
             )
             return
         if not interaction.guild_id:
             await interaction.response.send_message(
                 embed=self.embeds.message("Guild Only", "Run this inside a server.", emoji="⚠️"),
-                ephemeral=True,
             )
             return
         await self.db.set_reminder_time(interaction.guild_id, time)
         await interaction.response.send_message(
             embed=self.embeds.message("Reminder Updated", f"Daily digest scheduled for {time} UTC.", emoji="⏰"),
-            ephemeral=True,
         )
 
     @app_commands.command(name="distask-help", description="Show help for DisTask")
@@ -152,7 +142,6 @@ class AdminCog(commands.Cog):
         )
         await interaction.response.send_message(
             embed=self.embeds.message("Command Guide", message, emoji="📚"),
-            ephemeral=True,
         )
 
     async def _resolve_board(self, interaction: discord.Interaction, board_value: str):

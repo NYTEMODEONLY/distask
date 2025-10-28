@@ -13,6 +13,7 @@ DisTask is a production-ready Discord bot that provides lightweight kanban board
 - ✅ **Automation agent**: deduplicates, scores, and syncs shipping status from git history
 - ✅ **Permission-aware administration** (`Manage Guild`/`Manage Channels` checks where appropriate)
 - ✅ **Structured embeds & logging** (console + rotating file target)
+- ✅ **Channel-visible responses** so the entire team sees board & task activity (no ephemeral hides)
 - ✅ **Systemd unit** for 24/7 hosting on Linux
 
 ## Project Layout
@@ -97,6 +98,7 @@ distask/
 Additional behavior:
 
 - Default rate limit is 1 call / 3s per user. Heavy commands (`/create-board`, `/add-task`, `/search-task`, `/edit-task`) use 10s cooldowns.
+- All command responses are posted to the channel so admins and teammates can review changes later.
 - Reminder digests run roughly once per minute and deliver a daily summary (overdue + next 24h) to each board channel when the guild's scheduled time passes. Use `/toggle-notifications` + `/set-reminder` to control behavior per guild.
 - Feature requests persist to the `feature_requests` table. When GitHub credentials are configured, the bot publishes the backlog to `feature_requests.md` via the GitHub Contents API.
 
