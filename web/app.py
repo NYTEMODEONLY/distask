@@ -76,8 +76,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             color: var(--text-primary);
             min-height: 100vh;
             display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
+            gap: clamp(1.6rem, 3vh, 2.8rem);
             padding: clamp(0.85rem, 3.2vw, 1.9rem);
         }
         body::before {
@@ -227,11 +229,111 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         footer {
             font-size: clamp(0.7rem, 1.8vw, 0.8rem);
             color: var(--text-muted);
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+            align-items: center;
         }
         a.link {
             color: var(--text-primary);
             text-decoration: none;
             border-bottom: 1px solid rgba(255,255,255,0.2);
+        }
+        .footer-links {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+        }
+        .legal-section {
+            width: min(640px, 100%);
+            margin: 0 auto;
+            background: rgba(15, 5, 27, 0.6);
+            border-radius: 24px;
+            border: 1px solid rgba(255,255,255,0.08);
+            box-shadow: 0 40px 80px rgba(0,0,0,0.4);
+            padding: clamp(1rem, 2.6vw, 1.6rem);
+            display: flex;
+            flex-direction: column;
+            gap: clamp(1.5rem, 2.8vw, 2rem);
+        }
+        .legal-card {
+            display: none;
+            flex-direction: column;
+        }
+        .legal-card.active {
+            display: flex;
+        }
+        .legal-card h2 {
+            margin: 0 0 0.8rem;
+            font-size: clamp(1.08rem, 2.4vw, 1.32rem);
+            color: var(--text-primary);
+        }
+        .legal-card p {
+            margin: 0 0 0.9rem;
+            color: var(--text-muted);
+            font-size: clamp(0.78rem, 2vw, 0.9rem);
+            line-height: 1.55;
+        }
+        .legal-card p:last-of-type {
+            margin-bottom: 0;
+        }
+        body.modal-open {
+            overflow: hidden;
+        }
+        .modal-root {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: clamp(1rem, 3vw, 2rem);
+            background: rgba(12, 6, 24, 0.78);
+            backdrop-filter: blur(12px);
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+            transition: opacity 0.25s ease;
+            z-index: 20;
+        }
+        .modal-root.active {
+            opacity: 1;
+            visibility: visible;
+            pointer-events: auto;
+        }
+        .modal-sheet {
+            width: min(720px, calc(100vw - clamp(1.5rem, 5vw, 3rem)));
+            max-height: min(90vh, 960px);
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 1.2rem;
+        }
+        .modal-controls {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 1rem;
+        }
+        .modal-close {
+            appearance: none;
+            border: 1px solid rgba(255,255,255,0.18);
+            background: rgba(255,255,255,0.08);
+            color: var(--text-primary);
+            border-radius: 999px;
+            padding: 0.35rem 0.95rem;
+            font-size: 0.78rem;
+            font-weight: 500;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            transition: background 0.2s ease, transform 0.2s ease;
+        }
+        .modal-close:hover {
+            background: rgba(255,255,255,0.16);
+            transform: translateY(-1px);
+        }
+        .modal-close:active {
+            transform: scale(0.97);
         }
         #particles-js {
             position: fixed;
@@ -287,6 +389,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 gap: 0.4rem;
             }
         }
+        @media (min-width: 640px) {
+            .legal-section {
+                padding: clamp(1.4rem, 2.4vw, 2rem);
+            }
+        }
     </style>
 </head>
 <body>
@@ -331,8 +438,36 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
         <footer>
             <span>Built by <a class=\"link\" href=\"https://nytemode.com\" target=\"_blank\" rel=\"noopener\">nytemode</a> · Status pulses every 10 seconds</span>
+            <span class=\"footer-links\">
+                <a class=\"link legal-trigger\" href=\"#terms\" data-legal-target=\"terms\">Terms of Use</a>
+                <span aria-hidden=\"true\">·</span>
+                <a class=\"link legal-trigger\" href=\"#privacy\" data-legal-target=\"privacy\">Privacy Policy</a>
+            </span>
         </footer>
     </main>
+    <div class=\"modal-root\" id=\"legal-modal\" role=\"dialog\" aria-modal=\"true\" aria-hidden=\"true\">
+        <div class=\"modal-sheet\" role=\"document\">
+            <div class=\"modal-controls\">
+                <button class=\"modal-close\" type=\"button\" id=\"legal-modal-close\" aria-label=\"Close legal information\">Close</button>
+            </div>
+            <div class=\"legal-section\" id=\"legal-modal-content\" tabindex=\"-1\">
+                <article class=\"legal-card\" data-legal=\"terms\" aria-labelledby=\"legal-title-terms\" hidden>
+                    <h2 id=\"legal-title-terms\" tabindex=\"-1\">Terms of Use</h2>
+                    <p>DisTask provides Discord-native project coordination through task boards, queues, and automated reminders. By adding the bot to your server, you represent that you have permission to connect the workspace and manage the information collected through your guild.</p>
+                    <p>Using the bot requires us to persistently store boards, tasks, checklists, reminder schedules, and related audit timestamps on infrastructure operated for DisTask. This storage keeps workflows available across sessions, restarts, and channel changes.</p>
+                    <p>You remain responsible for the content submitted through commands, including ensuring that tasks and notes comply with your organization's policies and Discord's community guidelines. We may suspend access if activity risks system integrity or violates platform rules.</p>
+                    <p>You may remove DisTask from your server at any time. Doing so stops new data collection and begins the scheduled removal of stored workspace data, subject to reasonable backup and audit requirements.</p>
+                </article>
+                <article class=\"legal-card\" data-legal=\"privacy\" aria-labelledby=\"legal-title-privacy\" hidden>
+                    <h2 id=\"legal-title-privacy\" tabindex=\"-1\">Privacy Policy</h2>
+                    <p>When you interact with DisTask, we collect the minimum information needed to run the service: Discord guild, channel, and user identifiers; the content of boards, tasks, tags, attachments metadata, and reminders you create; and operational logs that help us secure the platform.</p>
+                    <p>All records are stored on servers dedicated to the DisTask bot so that task lists, board views, and automation remain synchronized across Discord sessions. We do not sell this data or share it with third parties except as required to operate the service or comply with law.</p>
+                    <p>Server administrators can use bot commands or support channels to correct or delete items. Removing a task or board will queue it for deletion from our active systems, and full workspace removal occurs after the bot is disconnected, following standard backup retention windows.</p>
+                    <p>If you have questions about how your information is handled or need additional assistance, contact the maintainers at <a class=\"link\" href=\"mailto:hello@distask.xyz\">hello@distask.xyz</a>.</p>
+                </article>
+            </div>
+        </div>
+    </div>
     <script>
         function initParticles() {
             if (!window.particlesJS) return;
@@ -364,11 +499,141 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 label.textContent = 'Status Unknown';
             }
         }
+        function setupLegalModal() {
+            const legalModal = document.getElementById('legal-modal');
+            const closeBtn = document.getElementById('legal-modal-close');
+            const modalContent = document.getElementById('legal-modal-content');
+            const modalSheet = legalModal ? legalModal.querySelector('.modal-sheet') : null;
+            const triggers = Array.from(document.querySelectorAll('[data-legal-target]'));
+            if (!legalModal || !closeBtn || !modalContent || !modalSheet || triggers.length === 0) return;
+            const cards = Array.from(legalModal.querySelectorAll('.legal-card'));
+            const validTargets = new Set(cards.map((card) => card.dataset.legal).filter(Boolean));
+            if (validTargets.size === 0) return;
+            const baseUrl = `${window.location.pathname}${window.location.search}`;
+            let activeTarget = null;
+            let lastTrigger = null;
+            let modalStatePushed = false;
+            function activateCard(target) {
+                let activeCard = null;
+                cards.forEach((card) => {
+                    const isActive = card.dataset.legal === target;
+                    card.classList.toggle('active', isActive);
+                    card.hidden = !isActive;
+                    if (isActive) {
+                        activeCard = card;
+                    }
+                });
+                return activeCard;
+            }
+            function openModal(target, fromHistory = false) {
+                if (!validTargets.has(target)) return;
+                const activeCardNode = activateCard(target);
+                if (!activeCardNode) return;
+                const heading = activeCardNode.querySelector('h2');
+                if (heading && heading.id) {
+                    legalModal.setAttribute('aria-labelledby', heading.id);
+                } else {
+                    legalModal.removeAttribute('aria-labelledby');
+                }
+                legalModal.classList.add('active');
+                legalModal.setAttribute('aria-hidden', 'false');
+                document.body.classList.add('modal-open');
+                modalSheet.scrollTop = 0;
+                activeTarget = target;
+                const focusTarget = heading && typeof heading.focus === 'function' ? heading : modalContent;
+                window.requestAnimationFrame(() => {
+                    focusTarget.focus({ preventScroll: true });
+                });
+                if (fromHistory) {
+                    const state = window.history.state;
+                    modalStatePushed = Boolean(state && state.legalModal === target);
+                    lastTrigger = null;
+                } else {
+                    history.pushState({ legalModal: target }, '', `${baseUrl}#${target}`);
+                    modalStatePushed = true;
+                }
+            }
+            function closeModal(fromHistory = false) {
+                if (!legalModal.classList.contains('active')) {
+                    activeTarget = null;
+                    modalStatePushed = false;
+                    return;
+                }
+                legalModal.classList.remove('active');
+                legalModal.setAttribute('aria-hidden', 'true');
+                legalModal.removeAttribute('aria-labelledby');
+                document.body.classList.remove('modal-open');
+                cards.forEach((card) => {
+                    card.classList.remove('active');
+                    card.hidden = true;
+                });
+                const previousTarget = activeTarget;
+                activeTarget = null;
+                if (!fromHistory && lastTrigger && typeof lastTrigger.focus === 'function') {
+                    lastTrigger.focus();
+                }
+                lastTrigger = null;
+                if (!fromHistory) {
+                    if (modalStatePushed) {
+                        modalStatePushed = false;
+                        history.back();
+                    } else if (previousTarget && window.location.hash.replace(/^#/, '') === previousTarget) {
+                        history.replaceState(window.history.state, '', baseUrl);
+                    }
+                } else {
+                    modalStatePushed = false;
+                }
+            }
+            triggers.forEach((trigger) => {
+                trigger.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    const target = trigger.getAttribute('data-legal-target');
+                    if (!target || !validTargets.has(target)) return;
+                    lastTrigger = trigger;
+                    if (legalModal.classList.contains('active') && activeTarget === target) {
+                        return;
+                    }
+                    openModal(target);
+                });
+            });
+            closeBtn.addEventListener('click', () => closeModal());
+            legalModal.addEventListener('click', (event) => {
+                if (event.target === legalModal) {
+                    closeModal();
+                }
+            });
+            document.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape' && legalModal.classList.contains('active')) {
+                    closeModal();
+                }
+            });
+            window.addEventListener('popstate', () => {
+                const hash = window.location.hash.replace(/^#/, '');
+                if (validTargets.has(hash)) {
+                    openModal(hash, true);
+                } else {
+                    closeModal(true);
+                }
+            });
+            window.addEventListener('hashchange', () => {
+                const hash = window.location.hash.replace(/^#/, '');
+                if (validTargets.has(hash)) {
+                    openModal(hash, true);
+                } else {
+                    closeModal(true);
+                }
+            });
+            const initialHash = window.location.hash.replace(/^#/, '');
+            if (validTargets.has(initialHash)) {
+                openModal(initialHash, true);
+            }
+        }
         document.addEventListener('DOMContentLoaded', () => {
             initParticles();
             if (window.lucide) { window.lucide.createIcons(); }
             refreshStatus();
             setInterval(refreshStatus, 10000);
+            setupLegalModal();
         });
     </script>
 </body>
