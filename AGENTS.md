@@ -54,6 +54,7 @@
 ## Commit & Pull Request Guidelines
 - Follow existing history: imperative subjects with optional scopes (`feat:`, `web:`), e.g., `feat: tighten reminders`.
 - Reference feature requests in implementation commits using `FR-<id>` (for example `FR-123`) so the automation can mark them completed automatically.
+- Missing the reference leaves the request `pending`; the automation will revert any manual status edits the next time it exports `feature_requests.md`.
 - Keep unrelated changes in separate commits and ship schema updates with the cogs that use them.
 - PRs should include a summary, testing notes, linked issue or Discord thread, and visuals for embed/UI tweaks.
 - Highlight permission changes or new env vars in the PR title or checklist.
