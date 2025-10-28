@@ -12,6 +12,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 import sys
+import math
 
 from dotenv import load_dotenv
 
@@ -47,6 +48,11 @@ class FeatureRequest:
     created_at: Optional[datetime]
     duplicate_of: Optional[int]
     last_analyzed_at: Optional[datetime]
+    community_message_id: Optional[int]
+    community_channel_id: Optional[int]
+    community_upvotes: int
+    community_downvotes: int
+    community_duplicate_votes: int
 
     @property
     def combined_text(self) -> str:
@@ -105,6 +111,11 @@ def to_model(rows: Iterable[Dict[str, object]]) -> List[FeatureRequest]:
                 created_at=_safe_datetime(row.get("created_at") or row.get("Created At")),
                 duplicate_of=_safe_int(row.get("duplicate_of") or row.get("Duplicate Of")),
                 last_analyzed_at=_safe_datetime(row.get("last_analyzed_at") or row.get("Last Analyzed")),
+                community_message_id=_safe_int(row.get("community_message_id") or row.get("Community Message Id")),
+                community_channel_id=_safe_int(row.get("community_channel_id") or row.get("Community Channel Id")),
+                community_upvotes=_safe_int(row.get("community_upvotes") or row.get("Community Upvotes")) or 0,
+                community_downvotes=_safe_int(row.get("community_downvotes") or row.get("Community Downvotes")) or 0,
+                community_duplicate_votes=_safe_int(row.get("community_duplicate_votes") or row.get("Community Duplicate Votes")) or 0,
             )
         )
     return models
@@ -156,11 +167,23 @@ def _is_older(a: FeatureRequest, b: FeatureRequest) -> bool:
     return a.id <= b.id
 
 
-def compute_priority_score(req: FeatureRequest) -> Tuple[float, Dict[str, int]]:
+def compute_priority_score(req: FeatureRequest) -> Tuple[float, Dict[str, float]]:
     priority = req.priority if req.priority is not None else 5
     ease = req.ease if req.ease is not None else 5
-    score = float(priority + ease)
-    return score, {"priority": priority, "ease": ease}
+    net_votes = max(req.community_upvotes - req.community_downvotes, 0)
+    vote_bonus = math.log1p(net_votes) * 2.0
+    duplicate_penalty = math.log1p(max(req.community_duplicate_votes, 0)) * 1.5
+    score = float(priority + ease + vote_bonus - duplicate_penalty)
+    return score, {
+        "priority": float(priority),
+        "ease": float(ease),
+        "vote_bonus": vote_bonus,
+        "duplicate_penalty": duplicate_penalty,
+        "net_votes": float(net_votes),
+        "upvotes": float(req.community_upvotes),
+        "downvotes": float(req.community_downvotes),
+        "dup_votes": float(req.community_duplicate_votes),
+    }
 
 
 def build_queue_from_models(models: Iterable[FeatureRequest]) -> List[Dict[str, object]]:
@@ -169,6 +192,12 @@ def build_queue_from_models(models: Iterable[FeatureRequest]) -> List[Dict[str, 
         score, components = compute_priority_score(model)
         if model.status not in {"pending", "in_progress"} or model.duplicate_of:
             continue
+        notes_parts = []
+        if components["vote_bonus"] > 0:
+            notes_parts.append(f"votes +{components['vote_bonus']:.2f}")
+        if components["duplicate_penalty"] > 0:
+            notes_parts.append(f"dup -{components['duplicate_penalty']:.2f}")
+        notes = ", ".join(notes_parts) if notes_parts else None
         queue.append(
             {
                 "id": model.id,
@@ -178,7 +207,14 @@ def build_queue_from_models(models: Iterable[FeatureRequest]) -> List[Dict[str, 
                 "ease": components["ease"],
                 "status": model.status,
                 "duplicate_of": model.duplicate_of,
-                "notes": None,
+                "votes": {
+                    "up": model.community_upvotes,
+                    "down": model.community_downvotes,
+                    "duplicate": model.community_duplicate_votes,
+                    "net": int(components["net_votes"]),
+                },
+                "components": components,
+                "notes": notes,
             }
         )
     queue.sort(key=lambda item: (-item["score"], item["id"]))
@@ -245,26 +281,29 @@ def write_outputs(queue: List[Dict[str, object]]) -> None:
 
 def build_markdown(queue: List[Dict[str, object]]) -> str:
     header = (
-        "| Rank | ID | Title | Score | Priority | Ease | Status | Duplicate Of | Notes |\n"
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
+        "| Rank | ID | Title | Score | Priority | Ease | Net Votes | Status | Duplicate Of | Notes |\n"
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
     )
     lines = []
     for idx, item in enumerate(queue, start=1):
+        votes = item.get("votes") or {}
+        net_votes = votes.get("net", 0)
         lines.append(
-            "| {rank} | {id} | {title} | {score} | {priority} | {ease} | {status} | {duplicate} | {notes} |".format(
+            "| {rank} | {id} | {title} | {score} | {priority} | {ease} | {net} | {status} | {duplicate} | {notes} |".format(
                 rank=idx,
                 id=item["id"],
                 title=_escape_markdown(item["title"]),
                 score=item["score"],
                 priority=item["priority"],
                 ease=item["ease"],
+                net=net_votes,
                 status=item["status"],
                 duplicate=item.get("duplicate_of") or "-",
                 notes=_escape_markdown(item.get("notes") or "-"),
             )
         )
     if not lines:
-        lines.append("| - | - | No feature requests | - | - | - | - | - | - |")
+        lines.append("| - | - | No feature requests | - | - | - | - | - | - | - |")
     return header + "\n".join(lines) + "\n"
 
 
@@ -338,11 +377,19 @@ async def main() -> None:
 
         queue = build_queue_from_models(refreshed_models)
         for item in queue:
+            components = item.get("components") or {}
+            votes = item.get("votes") or {}
             await db.set_feature_score(
                 item["id"],
                 score=item["score"],
                 priority_value=item["priority"],
                 ease_value=item["ease"],
+                vote_bonus=components.get("vote_bonus"),
+                duplicate_penalty=components.get("duplicate_penalty"),
+                net_votes=int(components.get("net_votes", 0)),
+                upvotes=votes.get("up"),
+                downvotes=votes.get("down"),
+                duplicate_votes=votes.get("duplicate"),
             )
 
         write_outputs(queue)

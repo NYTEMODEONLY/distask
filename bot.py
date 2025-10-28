@@ -15,6 +15,15 @@ from utils import Database, EmbedFactory, ReminderScheduler
 BASE_DIR = Path(__file__).parent
 
 
+def _maybe_int(value: Optional[str]) -> Optional[int]:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def load_config() -> Dict[str, Any]:
     load_dotenv()
     token = os.getenv("TOKEN") or os.getenv("token")
@@ -35,6 +44,9 @@ def load_config() -> Dict[str, Any]:
         "github_token": os.getenv("GITHUB_TOKEN") or os.getenv("github_token"),
         "repo_owner": os.getenv("REPO_OWNER") or os.getenv("repo_owner") or "NYTEMODEONLY",
         "repo_name": os.getenv("REPO_NAME") or os.getenv("repo_name") or "distask",
+        "community_guild_id": _maybe_int(os.getenv("COMMUNITY_GUILD_ID") or os.getenv("community_guild_id")),
+        "community_channel_id": _maybe_int(os.getenv("COMMUNITY_CHANNEL_ID") or os.getenv("community_channel_id")),
+        "community_feature_webhook": os.getenv("COMMUNITY_FEATURE_WEBHOOK") or os.getenv("community_feature_webhook"),
     }
     return config
 
@@ -133,6 +145,9 @@ class DisTaskBot(commands.Bot):
             github_token=self.config.get("github_token"),
             repo_owner=self.config.get("repo_owner"),
             repo_name=self.config.get("repo_name"),
+            community_guild_id=self.config.get("community_guild_id"),
+            community_channel_id=self.config.get("community_channel_id"),
+            community_webhook_url=self.config.get("community_feature_webhook"),
         )
 
 

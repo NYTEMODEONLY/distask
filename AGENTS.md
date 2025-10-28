@@ -16,6 +16,12 @@
 - `uvicorn web.app:app --reload` runs the status site locally on `http://127.0.0.1:8000`.
 - `tail -f logs/distask.log` streams structured logs for troubleshooting instead of ad-hoc prints.
 
+### Community Voting
+
+- Populate `community_guild_id`, `community_channel_id`, and `community_feature_webhook` in `.env` so `/request-feature` announcements land in the community server.
+- The bot posts embeds via webhook, then adds 👍 / 👎 / 🔁 reactions. Reaction events update the `community_*` counters on each feature request, which the automation uses for scoring.
+- If the webhook/channel changes, update `.env` and restart `distask.service` plus `distask-feature-agent.timer`.
+
 ### GitHub Credentials
 
 - Keep `github_token` in `.env`; restart services after rotating the PAT.

@@ -17,13 +17,13 @@ FEATURE_REQUESTS_PATH = "feature_requests.md"
 
 def _format_markdown(rows: Iterable[Dict[str, Any]]) -> str:
     header = (
-        "| ID | User ID | Guild ID | Title | Suggestion | Suggested Priority | Status | Priority | Ease | Score | Duplicate Of | Last Analyzed | Created At | Completed At |\n"
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
+        "| ID | User ID | Guild ID | Title | Suggestion | Suggested Priority | Status | Priority | Ease | Score | Upvotes | Downvotes | Duplicate Votes | Duplicate Of | Last Analyzed | Created At | Completed At |\n"
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
     )
     lines: List[str] = []
     for row in rows:
         lines.append(
-            "| {id} | {user_id} | {guild_id} | {title} | {suggestion} | {suggested_priority} | {status} | {priority} | {ease} | {score} | {duplicate_of} | {last_analyzed} | {created_at} | {completed_at} |".format(
+            "| {id} | {user_id} | {guild_id} | {title} | {suggestion} | {suggested_priority} | {status} | {priority} | {ease} | {score} | {upvotes} | {downvotes} | {dup_votes} | {duplicate_of} | {last_analyzed} | {created_at} | {completed_at} |".format(
                 id=_format_cell(row.get("id")),
                 user_id=_format_cell(row.get("user_id")),
                 guild_id=_format_cell(row.get("guild_id")),
@@ -34,6 +34,9 @@ def _format_markdown(rows: Iterable[Dict[str, Any]]) -> str:
                 priority=_format_cell(row.get("priority")),
                 ease=_format_cell(row.get("ease_of_implementation")),
                 score=_format_cell(row.get("score")),
+                upvotes=_format_cell(row.get("community_upvotes")),
+                downvotes=_format_cell(row.get("community_downvotes")),
+                dup_votes=_format_cell(row.get("community_duplicate_votes")),
                 duplicate_of=_format_cell(row.get("duplicate_of")),
                 last_analyzed=_format_cell(row.get("last_analyzed_at")),
                 created_at=_format_cell(row.get("created_at")),
@@ -41,7 +44,7 @@ def _format_markdown(rows: Iterable[Dict[str, Any]]) -> str:
             )
         )
     if not lines:
-        lines.append("| - | - | - | No feature requests yet | - | - | - | - | - | - | - | - | - | - |")
+        lines.append("| - | - | - | No feature requests yet | - | - | - | - | - | - | - | - | - | - | - | - | - |")
     return header + "\n".join(lines) + "\n"
 
 

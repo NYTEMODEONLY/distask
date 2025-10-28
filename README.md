@@ -10,6 +10,7 @@ DisTask is a production-ready Discord bot that provides lightweight kanban board
 - ✅ **Task lifecycle tools**: assign, move, edit, complete, delete, and full-text search
 - ✅ **Due dates + reminders**: background worker posts daily digests to board channels
 - ✅ **Feature requests**: `/request-feature` modal logs ideas and syncs them to GitHub
+- ✅ **Community voting**: submissions auto-post to the DisTask community server with 👍 / 👎 / 🔁 reactions to drive prioritisation
 - ✅ **Automation agent**: deduplicates, scores, and syncs shipping status from git history
 - ✅ **Permission-aware administration** (`Manage Guild`/`Manage Channels` checks where appropriate)
 - ✅ **Structured embeds & logging** (console + rotating file target)
@@ -59,6 +60,7 @@ distask/
    - Fill in `token` with your bot token (keep it private!).
    - Add `discord_client_id` (used for invite URLs) and, if you plan to run OAuth flows, `discord_client_secret`. These are optional but keep the landing-page CTA up to date.
    - Configure `github_token`, `repo_owner`, and `repo_name` so feature requests can be published to your GitHub repo. The token needs `repo` scope.
+   - Set `community_guild_id`, `community_channel_id`, and `community_feature_webhook` if you want requests mirrored into the public DisTask community (or your own community server) for voting.
    - Adjust `database_url`, `log_file`, or `reminder_time` if desired. The URL should follow the PostgreSQL DSN format (`postgresql://user:password@host:port/database`).
 
 3. **Run the bot locally**:
@@ -101,6 +103,7 @@ Additional behavior:
 - All command responses are posted to the channel so admins and teammates can review changes later.
 - Reminder digests run roughly once per minute and deliver a daily summary (overdue + next 24h) to each board channel when the guild's scheduled time passes. Use `/toggle-notifications` + `/set-reminder` to control behavior per guild.
 - Feature requests persist to the `feature_requests` table. When GitHub credentials are configured, the bot publishes the backlog to `feature_requests.md` via the GitHub Contents API.
+- Community announcements add 👍 / 👎 / 🔁 reactions automatically; these votes feed nightly scoring (support adds weight, duplicate signals subtract) so the most demanded ideas float to the top.
 
 ## Feature Automation Pipeline
 
@@ -108,7 +111,7 @@ Additional behavior:
 
 1. **Ingest & normalise** – fetches the latest rows from PostgreSQL (or falls back to `feature_requests.md`) so the workload survives restarts.
 2. **Detect duplicates** – uses fuzzy matching on title + suggestion, automatically tagging high-confidence duplicates and logging near-matches for triage.
-3. **Score & queue** – computes `score = priority + ease_of_implementation` (defaults to `5` if unset), storing results on the request and emitting a prioritised queue at `automation/feature_queue.{json,md}`.
+3. **Score & queue** – combines `priority + ease + vote_bonus - duplicate_penalty` (defaults to `5` when unset; vote bonus is derived from 👍/👎 reaction counts and duplicate penalty from 🔁 reactions), storing results on the request and emitting a prioritised queue at `automation/feature_queue.{json,md}`.
 4. **Sync completion** – scans new git commits for tokens such as `FR-123` or `feature-request #123`, then marks matching feature requests as completed (with commit metadata and timestamps).
 
 Run it manually or from CI/cron:
@@ -157,6 +160,26 @@ The agent maintains its own cursor (`data/feature_agent_state.json`, ignored by 
    ```
 
 Because the agent is idempotent, multiple runs per day simply refresh duplicate detection, recalculate scores, and sync completed requests without disturbing existing data.
+
+## Community Voting Setup
+
+If you want feature requests to appear in a community hub with voting:
+
+1. Create (or reuse) a guild/channel and generate a webhook for the channel.
+2. Populate the following `.env` keys:
+
+   ```env
+   community_guild_id=YOUR_COMMUNITY_GUILD_ID
+   community_channel_id=YOUR_FEATURE_CHANNEL_ID
+   community_feature_webhook=https://discord.com/api/webhooks/...
+   ```
+
+3. Restart the bot (and feature-agent timer). Every `/request-feature` submission will now:
+   - Post a rich embed to the community channel.
+   - Automatically add 👍 / 👎 / 🔁 reactions.
+   - Track vote counts in the database so nightly automation can use them when scoring.
+
+Votes translate to a score bonus (`log1p(👍 - 👎) * 2`) and duplicate penalty (`log1p(🔁) * 1.5`). A surge of community support will push an item up the queue, while community-marked duplicates drop to the consolidation list.
 
 ### GitHub Authentication & PAT Rotation
 

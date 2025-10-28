@@ -7,10 +7,15 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+import aiohttp
+
 from utils import Database, EmbedFactory, Validator
 from utils.github_utils import export_to_github
 
 GITHUB_LINK = "https://github.com/NYTEMODEONLY/distask/blob/main/feature_requests.md"
+THUMBS_UP = "👍"
+THUMBS_DOWN = "👎"
+DUPLICATE_EMOJI = "🔁"
 
 
 class FeatureRequestModal(discord.ui.Modal):
@@ -76,6 +81,9 @@ class FeaturesCog(commands.Cog):
         github_token: Optional[str],
         repo_owner: Optional[str],
         repo_name: Optional[str],
+        community_guild_id: Optional[int],
+        community_channel_id: Optional[int],
+        community_webhook_url: Optional[str],
     ) -> None:
         self.bot = bot
         self.db = db
@@ -84,6 +92,9 @@ class FeaturesCog(commands.Cog):
         self.github_token = github_token
         self.repo_owner = repo_owner
         self.repo_name = repo_name
+        self.community_guild_id = community_guild_id
+        self.community_channel_id = community_channel_id
+        self.community_webhook_url = community_webhook_url
 
     @app_commands.command(name="request-feature", description="Suggest a new feature for DisTask")
     @app_commands.checks.cooldown(1, 10.0)
@@ -160,7 +171,16 @@ class FeaturesCog(commands.Cog):
             emoji="✨",
         )
         embed.add_field(name="Request ID", value=str(request_id), inline=False)
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+        await self._announce_to_community(
+            feature_id=request_id,
+            guild=interaction.guild,
+            requester=interaction.user,
+            title=clean_title,
+            suggestion=clean_suggestion,
+            suggested_priority=clean_priority,
+        )
 
         await self._export_feature_requests()
 
@@ -174,3 +194,90 @@ class FeaturesCog(commands.Cog):
             )
         except Exception as exc:
             self.logger.exception("Failed to export feature requests to GitHub: %s", exc)
+
+    async def _announce_to_community(
+        self,
+        *,
+        feature_id: int,
+        guild: Optional[discord.Guild],
+        requester: discord.abc.User,
+        title: str,
+        suggestion: str,
+        suggested_priority: Optional[str],
+    ) -> None:
+        if not self.community_webhook_url or not self.community_channel_id:
+            return
+        embed = discord.Embed(
+            title=f"Feature #{feature_id}: {title}",
+            description=suggestion or "—",
+            color=discord.Color.blurple(),
+        )
+        guild_name = guild.name if guild else "Unknown Server"
+        embed.add_field(name="Requested By", value=f"<@{requester.id}>", inline=True)
+        embed.add_field(name="Origin Server", value=guild_name, inline=True)
+        if suggested_priority:
+            embed.add_field(name="Suggested Priority", value=suggested_priority, inline=True)
+        embed.add_field(name="Public Backlog", value=GITHUB_LINK, inline=False)
+        embed.set_footer(text="Vote with 👍 / 👎 / 🔁 to influence priority and duplicate detection.")
+
+        message_id: Optional[int] = None
+        try:
+            avatar_url = self.bot.user.display_avatar.url if self.bot.user else None
+            async with aiohttp.ClientSession() as session:
+                webhook = discord.Webhook.from_url(self.community_webhook_url, session=session)
+                webhook_message = await webhook.send(
+                    embed=embed,
+                    wait=True,
+                    username="DisTask Feature Requests",
+                    avatar_url=avatar_url,
+                )
+                if isinstance(webhook_message, discord.WebhookMessage):
+                    message_id = webhook_message.id
+        except Exception as exc:
+            self.logger.exception("Failed to post feature request %s to community webhook: %s", feature_id, exc)
+            return
+
+        if not message_id:
+            return
+
+        try:
+            channel = await self.bot.fetch_channel(self.community_channel_id)
+            if isinstance(channel, discord.TextChannel):
+                message = await channel.fetch_message(message_id)
+                for emoji in (THUMBS_UP, THUMBS_DOWN, DUPLICATE_EMOJI):
+                    await message.add_reaction(emoji)
+                await self.db.set_feature_request_message(feature_id, message_id=message.id, channel_id=channel.id)
+        except Exception as exc:
+            self.logger.exception("Failed to finalize community announcement for feature %s: %s", feature_id, exc)
+
+    @commands.Cog.listener()
+    async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent) -> None:
+        await self._handle_reaction_event(payload, delta=1)
+
+    @commands.Cog.listener()
+    async def on_raw_reaction_remove(self, payload: discord.RawReactionActionEvent) -> None:
+        await self._handle_reaction_event(payload, delta=-1)
+
+    async def _handle_reaction_event(self, payload: discord.RawReactionActionEvent, *, delta: int) -> None:
+        if payload.user_id == (self.bot.user.id if self.bot.user else None):
+            return
+        if self.community_guild_id and payload.guild_id != self.community_guild_id:
+            return
+        if payload.channel_id != self.community_channel_id:
+            return
+        emoji = str(payload.emoji)
+        if emoji not in {THUMBS_UP, THUMBS_DOWN, DUPLICATE_EMOJI}:
+            return
+        feature = await self.db.get_feature_by_message(payload.message_id)
+        if not feature:
+            return
+        up_delta = down_delta = dup_delta = 0
+        if emoji == THUMBS_UP:
+            up_delta = delta
+        elif emoji == THUMBS_DOWN:
+            down_delta = delta
+        elif emoji == DUPLICATE_EMOJI:
+            dup_delta = delta
+        if up_delta == down_delta == dup_delta == 0:
+            return
+        await self.db.adjust_feature_votes(feature["id"], up_delta=up_delta, down_delta=down_delta, duplicate_delta=dup_delta)

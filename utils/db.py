@@ -94,7 +94,12 @@ class Database:
                     merge_history JSONB NOT NULL DEFAULT '[]'::jsonb,
                     analysis_data JSONB NOT NULL DEFAULT '{}'::jsonb,
                     last_analyzed_at TIMESTAMP,
-                    score NUMERIC
+                    score NUMERIC,
+                    community_message_id BIGINT,
+                    community_channel_id BIGINT,
+                    community_upvotes INTEGER NOT NULL DEFAULT 0,
+                    community_downvotes INTEGER NOT NULL DEFAULT 0,
+                    community_duplicate_votes INTEGER NOT NULL DEFAULT 0
                 )
                 """,
                 "CREATE INDEX IF NOT EXISTS idx_feature_requests_guild ON feature_requests(guild_id)",
@@ -103,6 +108,11 @@ class Database:
                 "ALTER TABLE feature_requests ADD COLUMN IF NOT EXISTS analysis_data JSONB NOT NULL DEFAULT '{}'::jsonb",
                 "ALTER TABLE feature_requests ADD COLUMN IF NOT EXISTS last_analyzed_at TIMESTAMP",
                 "ALTER TABLE feature_requests ADD COLUMN IF NOT EXISTS score NUMERIC",
+                "ALTER TABLE feature_requests ADD COLUMN IF NOT EXISTS community_message_id BIGINT",
+                "ALTER TABLE feature_requests ADD COLUMN IF NOT EXISTS community_channel_id BIGINT",
+                "ALTER TABLE feature_requests ADD COLUMN IF NOT EXISTS community_upvotes INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE feature_requests ADD COLUMN IF NOT EXISTS community_downvotes INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE feature_requests ADD COLUMN IF NOT EXISTS community_duplicate_votes INTEGER NOT NULL DEFAULT 0",
             ]
             for statement in schema_statements:
                 await conn.execute(statement)
@@ -451,6 +461,50 @@ class Database:
         )
         return [dict(row) for row in rows or []]
 
+    async def set_feature_request_message(
+        self,
+        feature_id: int,
+        *,
+        message_id: int,
+        channel_id: int,
+    ) -> None:
+        await self._execute(
+            """
+            UPDATE feature_requests
+            SET community_message_id = $1,
+                community_channel_id = $2
+            WHERE id = $3
+            """,
+            (message_id, channel_id, feature_id),
+        )
+
+    async def get_feature_by_message(self, message_id: int) -> Optional[Dict[str, Any]]:
+        row = await self._execute(
+            "SELECT * FROM feature_requests WHERE community_message_id = $1",
+            (message_id,),
+            fetchone=True,
+        )
+        return dict(row) if row else None
+
+    async def adjust_feature_votes(
+        self,
+        feature_id: int,
+        *,
+        up_delta: int = 0,
+        down_delta: int = 0,
+        duplicate_delta: int = 0,
+    ) -> None:
+        await self._execute(
+            """
+            UPDATE feature_requests
+            SET community_upvotes = GREATEST(community_upvotes + $1, 0),
+                community_downvotes = GREATEST(community_downvotes + $2, 0),
+                community_duplicate_votes = GREATEST(community_duplicate_votes + $3, 0)
+            WHERE id = $4
+            """,
+            (up_delta, down_delta, duplicate_delta, feature_id),
+        )
+
     async def mark_feature_duplicate(
         self,
         request_id: int,
@@ -528,6 +582,12 @@ class Database:
         score: float,
         priority_value: Optional[int],
         ease_value: Optional[int],
+        vote_bonus: Optional[float] = None,
+        duplicate_penalty: Optional[float] = None,
+        net_votes: Optional[int] = None,
+        upvotes: Optional[int] = None,
+        downvotes: Optional[int] = None,
+        duplicate_votes: Optional[int] = None,
     ) -> None:
         payload = {
             "score": score,
@@ -535,6 +595,18 @@ class Database:
             "priority_value": priority_value,
             "ease_value": ease_value,
         }
+        if vote_bonus is not None:
+            payload["vote_bonus"] = vote_bonus
+        if duplicate_penalty is not None:
+            payload["duplicate_penalty"] = duplicate_penalty
+        if net_votes is not None:
+            payload["net_votes"] = net_votes
+        if upvotes is not None:
+            payload["community_upvotes_snapshot"] = upvotes
+        if downvotes is not None:
+            payload["community_downvotes_snapshot"] = downvotes
+        if duplicate_votes is not None:
+            payload["community_duplicate_votes_snapshot"] = duplicate_votes
         await self._execute(
             """
             UPDATE feature_requests
