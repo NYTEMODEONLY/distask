@@ -234,7 +234,7 @@ The API simply shells out to `systemctl show distask.service`, so the status bad
 
 ## Development Notes
 
-- **Database**: PostgreSQL is used for multi-guild scalability. Configure the connection string via `DATABASE_URL`. Table relationships enforce cascading deletes so columns/tasks clean up with their parent board.
+- **Database**: PostgreSQL is used for multi-guild scalability. Configure the connection string via `DATABASE_URL`. Table relationships enforce cascading deletes so columns/tasks clean up with their parent board. When testing connectivity manually, remember that password auth is enforced; use something like `PGPASSWORD=distaskpass psql -h localhost -U distask -d distask -c "select now();"` (substitute your credentials) rather than bare `pg_isready`, which will report “no response” if no password is supplied.
 - **Logging**: Both stdout and the configured file receive structured logs. Adjust `setup_logging` in `bot.py` if you prefer RotatingFileHandler, etc.
 - **Credentials**: If you push over HTTPS, configure a credential helper (e.g. `git config credential.helper store`) so Personal Access Tokens persist between sessions and non-interactive pushes continue to work.
 - **Extensibility**: New slash commands can be added in the existing cogs or by creating additional cogs and registering them in `bot.py`.

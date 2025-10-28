@@ -63,5 +63,6 @@
 - Copy `.env.example` to `.env`, store secrets outside git, and point systemd units at that file. Populate `github_token`/`repo_owner`/`repo_name` so `/request-feature` exports succeed and the automation can publish updates.
 - The feature agent persists a cursor in `data/feature_agent_state.json`; the folder is git-ignored, ensure deployments retain it between runs if you need incremental git scans.
 - Run services as a non-root user and restrict access to `data/` and `logs/`.
+- PostgreSQL enforces password authentication; when sanity-checking, run `PGPASSWORD=yourpass psql -h localhost -U youruser -d yourdb -c "select now();"` so you don’t misinterpret `pg_isready` “no response” warnings.
 - Update the invite URL in `web/app.py` whenever the `discord_client_id` changes.
 - Last updated: $(date) - Verified commit process working correctly.
