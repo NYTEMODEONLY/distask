@@ -127,6 +127,7 @@ The agent maintains its own cursor (`data/feature_agent_state.json`, ignored by 
 
 - Start implementation work on a branch named `feature/<id>-short-slug` (e.g. `feature/123-modal-export`).
 - Include `FR-123` (or `feature-request #123`) in at least one commit message; the automation uses these markers to move the request to `completed`.
+- Without that marker the database keeps the request `pending`, so the next automation run will override any manual Markdown edits and reset the status.
 - Post-deploy, re-run the agent to confirm the request is marked as live and the queue reflects the next priority item.
 - The VPS now runs the automation nightly at 03:30 CST via `distask-feature-agent.timer`. Manually trigger a run any time with `sudo systemctl start distask-feature-agent.service`.
 
