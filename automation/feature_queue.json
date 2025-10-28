@@ -1,35 +1,9 @@
 {
-  "generated_at": "2025-10-28T01:13:02Z",
+  "generated_at": "2025-10-28T08:30:09Z",
   "items": [
     {
       "id": 1,
       "title": "Duplicate requests",
-      "score": 10.0,
-      "priority": 5.0,
-      "ease": 5.0,
-      "status": "pending",
-      "duplicate_of": null,
-      "votes": {
-        "up": 0,
-        "down": 0,
-        "duplicate": 0,
-        "net": 0
-      },
-      "components": {
-        "priority": 5.0,
-        "ease": 5.0,
-        "vote_bonus": 0.0,
-        "duplicate_penalty": 0.0,
-        "net_votes": 0.0,
-        "upvotes": 0.0,
-        "downvotes": 0.0,
-        "dup_votes": 0.0
-      },
-      "notes": null
-    },
-    {
-      "id": 2,
-      "title": "Lessen Ephemeral Messages",
       "score": 10.0,
       "priority": 5.0,
       "ease": 5.0,
@@ -160,6 +134,58 @@
     {
       "id": 7,
       "title": "New board creation methods",
+      "score": 10.0,
+      "priority": 5.0,
+      "ease": 5.0,
+      "status": "pending",
+      "duplicate_of": null,
+      "votes": {
+        "up": 0,
+        "down": 0,
+        "duplicate": 0,
+        "net": 0
+      },
+      "components": {
+        "priority": 5.0,
+        "ease": 5.0,
+        "vote_bonus": 0.0,
+        "duplicate_penalty": 0.0,
+        "net_votes": 0.0,
+        "upvotes": 0.0,
+        "downvotes": 0.0,
+        "dup_votes": 0.0
+      },
+      "notes": null
+    },
+    {
+      "id": 8,
+      "title": "Easier way to edit tasks",
+      "score": 10.0,
+      "priority": 5.0,
+      "ease": 5.0,
+      "status": "pending",
+      "duplicate_of": null,
+      "votes": {
+        "up": 0,
+        "down": 0,
+        "duplicate": 0,
+        "net": 0
+      },
+      "components": {
+        "priority": 5.0,
+        "ease": 5.0,
+        "vote_bonus": 0.0,
+        "duplicate_penalty": 0.0,
+        "net_votes": 0.0,
+        "upvotes": 0.0,
+        "downvotes": 0.0,
+        "dup_votes": 0.0
+      },
+      "notes": null
+    },
+    {
+      "id": 9,
+      "title": "React to self assign a task",
       "score": 10.0,
       "priority": 5.0,
       "ease": 5.0,

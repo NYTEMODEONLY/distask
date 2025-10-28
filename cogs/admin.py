@@ -53,82 +53,171 @@ class AdminCog(commands.Cog):
         return results[:25]
 
     @app_commands.command(name="add-column", description="Add a column to a board")
-    @app_commands.autocomplete(board=board_autocomplete)
-    @app_commands.describe(board="Board", name="Column name")
     @app_commands.checks.has_permissions(manage_channels=True)
     @app_commands.checks.cooldown(1, 3.0)
-    async def add_column(self, interaction: discord.Interaction, board: str, name: str) -> None:
-        board_data = await self._resolve_board(interaction, board)
-        validation = Validator.column_name(name)
-        if not validation.ok:
+    async def add_column(self, interaction: discord.Interaction) -> None:
+        from .ui import BoardSelectorView, AddColumnModal
+        from .ui.helpers import get_board_choices
+
+        if not interaction.guild_id:
             await interaction.response.send_message(
-                embed=self.embeds.message("Invalid Column", validation.message, emoji="⚠️"),
+                embed=self.embeds.message("Guild Only", "Run this inside a server.", emoji="⚠️"),
             )
             return
-        await self.db.add_column(board_data["id"], name.strip())
+
+        # Check if there are any boards first
+        board_options = await get_board_choices(self.db, interaction.guild_id)
+        if not board_options:
+            await interaction.response.send_message(
+                embed=self.embeds.message(
+                    "No Boards",
+                    "This server has no boards yet. Create one with `/create-board`.",
+                    emoji="📭",
+                ),
+            )
+            return
+
+        async def on_board_selected(inter: discord.Interaction, board_id: int, board: dict) -> None:
+            # Show modal to enter column name
+            modal = AddColumnModal(
+                board_id=board_id,
+                board_name=board["name"],
+                db=self.db,
+                embeds=self.embeds,
+            )
+            await inter.response.send_modal(modal)
+
+        view = BoardSelectorView(
+            guild_id=interaction.guild_id,
+            db=self.db,
+            embeds=self.embeds,
+            on_select=on_board_selected,
+            placeholder="Select a board...",
+            initial_options=board_options,
+        )
         await interaction.response.send_message(
-            embed=self.embeds.message("Column Added", f"**{name.strip()}** is now live.", emoji="➕"),
+            embed=self.embeds.message("Add Column", "Select a board to add a column to:", emoji="➕"),
+            view=view,
         )
 
     @app_commands.command(name="remove-column", description="Remove a column (must be empty)")
-    @app_commands.autocomplete(board=board_autocomplete, name=column_autocomplete)
-    @app_commands.describe(board="Board", name="Column name")
     @app_commands.checks.has_permissions(manage_channels=True)
     @app_commands.checks.cooldown(1, 3.0)
-    async def remove_column(self, interaction: discord.Interaction, board: str, name: str) -> None:
-        board_data = await self._resolve_board(interaction, board)
-        try:
-            removed = await self.db.remove_column(board_data["id"], name)
-        except ValueError as exc:
+    async def remove_column(self, interaction: discord.Interaction) -> None:
+        from .ui import BoardSelectorView, ColumnSelectorView, RemoveColumnConfirmationView
+        from .ui.helpers import get_board_choices, get_column_choices
+
+        if not interaction.guild_id:
             await interaction.response.send_message(
-                embed=self.embeds.message("Column Busy", str(exc), emoji="⚠️"),
+                embed=self.embeds.message("Guild Only", "Run this inside a server.", emoji="⚠️"),
             )
             return
-        if not removed:
+
+        # Check if there are any boards first
+        board_options = await get_board_choices(self.db, interaction.guild_id)
+        if not board_options:
             await interaction.response.send_message(
-                embed=self.embeds.message("Not Found", "That column does not exist.", emoji="⚠️"),
+                embed=self.embeds.message(
+                    "No Boards",
+                    "This server has no boards yet. Create one with `/create-board`.",
+                    emoji="📭",
+                ),
             )
             return
+
+        async def on_board_selected(inter: discord.Interaction, board_id: int, board: dict) -> None:
+            # Get column options
+            column_options = await get_column_choices(self.db, board_id)
+            if not column_options:
+                await inter.response.send_message(
+                    embed=self.embeds.message(
+                        "No Columns",
+                        "This board has no columns.",
+                        emoji="⚠️",
+                    ),
+                )
+                return
+
+            # Show column selector
+            async def on_column_selected(col_inter: discord.Interaction, column_id: int, column: dict) -> None:
+                # Show confirmation view
+                confirm_view = RemoveColumnConfirmationView(
+                    board_id=board_id,
+                    column_name=column["name"],
+                    db=self.db,
+                    embeds=self.embeds,
+                )
+                await col_inter.response.send_message(
+                    embed=self.embeds.message(
+                        "Confirm Removal",
+                        f"Are you sure you want to remove column **{column['name']}** from **{board['name']}**? The column must be empty.",
+                        emoji="⚠️",
+                    ),
+                    view=confirm_view,
+                )
+
+            column_view = ColumnSelectorView(
+                board_id=board_id,
+                db=self.db,
+                embeds=self.embeds,
+                on_select=on_column_selected,
+                placeholder="Select a column to remove...",
+                initial_options=column_options,
+            )
+            await inter.response.send_message(
+                embed=self.embeds.message("Remove Column", f"Select a column from **{board['name']}** to remove:", emoji="🗑️"),
+                view=column_view,
+            )
+
+        view = BoardSelectorView(
+            guild_id=interaction.guild_id,
+            db=self.db,
+            embeds=self.embeds,
+            on_select=on_board_selected,
+            placeholder="Select a board...",
+            initial_options=board_options,
+        )
         await interaction.response.send_message(
-            embed=self.embeds.message("Column Removed", f"Deleted **{name}** from the board.", emoji="🗑️"),
+            embed=self.embeds.message("Remove Column", "Select a board:", emoji="🗑️"),
+            view=view,
         )
 
     @app_commands.command(name="toggle-notifications", description="Enable or disable due reminders for this server")
-    @app_commands.describe(enabled="Enable reminders?")
     @app_commands.checks.has_permissions(manage_guild=True)
     @app_commands.checks.cooldown(1, 3.0)
-    async def toggle_notifications(self, interaction: discord.Interaction, enabled: bool) -> None:
+    async def toggle_notifications(self, interaction: discord.Interaction) -> None:
+        from .ui import NotificationToggleView
+
         if not interaction.guild_id:
             await interaction.response.send_message(
                 embed=self.embeds.message("Guild Only", "Run this inside a server.", emoji="⚠️"),
             )
             return
-        await self.db.set_notifications(interaction.guild_id, enabled)
-        status = "enabled" if enabled else "disabled"
+
+        view = NotificationToggleView(guild_id=interaction.guild_id, db=self.db, embeds=self.embeds)
         await interaction.response.send_message(
-            embed=self.embeds.message("Reminders", f"Digest pings {status}.", emoji="🔔"),
+            embed=self.embeds.message(
+                "Notification Settings",
+                "Choose whether to enable or disable reminder digests for this server.",
+                emoji="🔔",
+            ),
+            view=view,
         )
 
     @app_commands.command(name="set-reminder", description="Set the daily reminder time (UTC)")
-    @app_commands.describe(time="HH:MM 24h format")
     @app_commands.checks.has_permissions(manage_guild=True)
     @app_commands.checks.cooldown(1, 3.0)
-    async def set_reminder(self, interaction: discord.Interaction, time: str) -> None:
-        validation = Validator.reminder_time(time)
-        if not validation.ok:
-            await interaction.response.send_message(
-                embed=self.embeds.message("Invalid Time", validation.message, emoji="⚠️"),
-            )
-            return
+    async def set_reminder(self, interaction: discord.Interaction) -> None:
+        from .ui import ReminderTimeModal
+
         if not interaction.guild_id:
             await interaction.response.send_message(
                 embed=self.embeds.message("Guild Only", "Run this inside a server.", emoji="⚠️"),
             )
             return
-        await self.db.set_reminder_time(interaction.guild_id, time)
-        await interaction.response.send_message(
-            embed=self.embeds.message("Reminder Updated", f"Daily digest scheduled for {time} UTC.", emoji="⏰"),
-        )
+
+        modal = ReminderTimeModal(db=self.db, embeds=self.embeds)
+        await interaction.response.send_modal(modal)
 
     @app_commands.command(name="distask-help", description="Show help for DisTask")
     @app_commands.checks.cooldown(1, 3.0)

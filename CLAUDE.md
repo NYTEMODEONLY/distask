@@ -70,6 +70,50 @@ Cogs are loaded in `bot.py` via `_build_*_cog()` methods:
   - On reaction events, updates `community_upvotes`, `community_downvotes`, `community_duplicate_signals` in DB
   - Triggers GitHub export of `feature_requests.md` when credentials are configured
 
+### UI Components (`cogs/ui/`)
+All slash commands use Discord's interactive components (Modals, Buttons, Select Menus) instead of traditional slash command parameters. This provides a form-based interface that users prefer.
+
+**Architecture:**
+- **`modals.py`**: Modal classes for text input (CreateBoardModal, AddTaskModal, EditTaskModal, etc.)
+- **`views.py`**: View classes containing buttons and select menus (BoardSelectorView, NotificationToggleView, TaskActionsView, etc.)
+- **`helpers.py`**: Utility functions for parsing user input (@mentions, channel IDs) and fetching select menu options
+
+**Interaction Patterns:**
+
+1. **Direct Modal**: Command immediately shows modal for text input
+   - Examples: `/create-board`, `/search-task`, `/set-reminder`
+   - Flow: Slash command → Modal → Submit
+
+2. **Selection → Modal**: User selects from dropdown, then modal opens
+   - Examples: `/add-column`, `/view-board`
+   - Flow: Slash command → Select Menu → Modal (or action)
+
+3. **Multi-step Flow**: Complex commands with multiple selections
+   - Example: `/add-task`
+   - Flow: Slash command → Board Select → Column Select → Continue Button → Modal
+
+4. **Confirmation Pattern**: Destructive actions require typed confirmation
+   - Examples: `/delete-board`, `/delete-task`, `/remove-column`
+   - Flow: Slash command → Select Item → Confirmation Button → Confirmation Modal (type name/ID) → Delete
+
+5. **Button Toggle**: Boolean choices shown as buttons
+   - Example: `/toggle-notifications`
+   - Flow: Slash command → Enable/Disable buttons → Execute
+
+**Key Principles:**
+- All intermediate messages are **public** (not ephemeral) for team visibility
+- Select menus dynamically populated from database (boards, columns)
+- User/channel selection done via text input (@mention or ID)
+- Validation happens in modal submit handlers
+- Cooldowns apply to slash commands, not to button/select interactions
+- Views have timeouts (default 180-300 seconds)
+
+**Adding New Commands:**
+1. Create modal/view classes in `cogs/ui/`
+2. Export from `cogs/ui/__init__.py`
+3. Import in cog and use in command handler
+4. Follow existing patterns for consistency
+
 ### Utilities (`utils/`)
 - **`db.py`**: PostgreSQL wrapper, schema management, all database operations
 - **`embeds.py`**: `EmbedFactory` builds consistent Discord embeds (message, board, task, stats)
