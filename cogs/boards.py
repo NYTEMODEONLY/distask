@@ -137,8 +137,30 @@ class BoardsCog(commands.Cog):
         async def on_board_selected(inter: discord.Interaction, board_id: int, board: dict) -> None:
             await inter.response.defer(thinking=True)
             columns = await self.db.fetch_columns(board_id)
-            stats = await self.db.board_stats(board_id)
-            embed = self.embeds.board_detail(board, columns, stats)
+            stats = await self.db.board_stats_detailed(board_id)
+
+            # Fetch channel mention if available
+            channel_mention = None
+            if board.get("channel_id"):
+                try:
+                    channel = inter.guild.get_channel(board["channel_id"])
+                    if channel:
+                        channel_mention = channel.mention
+                except Exception:
+                    pass
+
+            # Get creator mention if available
+            creator_mention = None
+            if board.get("created_by"):
+                creator_mention = f"<@{board['created_by']}>"
+
+            embed = self.embeds.board_detail(
+                board,
+                columns,
+                stats,
+                channel_mention=channel_mention,
+                creator_mention=creator_mention,
+            )
             await inter.followup.send(embed=embed)
 
         view = BoardSelectorView(
