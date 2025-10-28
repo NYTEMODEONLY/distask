@@ -187,9 +187,19 @@ class CreateBoardModal(discord.ui.Modal):
         )
         board = await self.db.get_board(interaction.guild_id, board_id)
         columns = await self.db.fetch_columns(board_id)
-        stats = await self.db.board_stats(board_id)
-        embed = self.embeds.board_detail(board, columns, stats)
-        embed.add_field(name="Updates Channel", value=channel.mention, inline=False)
+        stats = await self.db.board_stats_detailed(board_id)
+
+        # Get creator and channel mentions
+        creator_mention = f"<@{interaction.user.id}>"
+        channel_mention = channel.mention
+
+        embed = self.embeds.board_detail(
+            board,
+            columns,
+            stats,
+            channel_mention=channel_mention,
+            creator_mention=creator_mention,
+        )
         await interaction.followup.send(embed=embed)
 
 

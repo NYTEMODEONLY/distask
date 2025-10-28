@@ -20,6 +20,87 @@ def _format_time(value: Optional[str]) -> str:
         return value
 
 
+def _format_relative_time(iso_timestamp: Optional[str]) -> str:
+    """Format timestamp as relative time (e.g., '3 days ago')."""
+    if not iso_timestamp:
+        return "Unknown"
+    try:
+        dt = datetime.fromisoformat(iso_timestamp.replace("Z", "+00:00"))
+        now = datetime.now(timezone.utc)
+        delta = now - dt
+
+        if delta.days > 365:
+            years = delta.days // 365
+            return f"{years} year{'s' if years != 1 else ''} ago"
+        elif delta.days > 30:
+            months = delta.days // 30
+            return f"{months} month{'s' if months != 1 else ''} ago"
+        elif delta.days > 0:
+            return f"{delta.days} day{'s' if delta.days != 1 else ''} ago"
+        elif delta.seconds > 3600:
+            hours = delta.seconds // 3600
+            return f"{hours} hour{'s' if hours != 1 else ''} ago"
+        elif delta.seconds > 60:
+            minutes = delta.seconds // 60
+            return f"{minutes} minute{'s' if minutes != 1 else ''} ago"
+        else:
+            return "just now"
+    except (ValueError, AttributeError):
+        return "Unknown"
+
+
+def _create_progress_bar(current: int, total: int, length: int = 16) -> str:
+    """Create a Unicode progress bar."""
+    if total == 0:
+        return "░" * length
+
+    filled_length = int(length * current / total)
+    bar = "█" * filled_length + "░" * (length - filled_length)
+    return bar
+
+
+def _get_column_emoji(column_name: str) -> str:
+    """Get emoji for common column names."""
+    name_lower = column_name.lower()
+    emoji_map = {
+        "to do": "📝",
+        "todo": "📝",
+        "backlog": "📋",
+        "in progress": "⚙️",
+        "in-progress": "⚙️",
+        "doing": "⚙️",
+        "working": "⚙️",
+        "done": "✅",
+        "complete": "✅",
+        "completed": "✅",
+        "finished": "✅",
+        "review": "👀",
+        "testing": "🧪",
+        "blocked": "🚫",
+        "on hold": "⏸️",
+        "waiting": "⏳",
+    }
+    return emoji_map.get(name_lower, "📌")
+
+
+def _calculate_board_health_color(stats: Dict[str, int]) -> discord.Color:
+    """Determine embed color based on board health."""
+    total = stats.get("total", 0)
+    overdue = stats.get("overdue", 0)
+
+    if total == 0:
+        return discord.Color.from_rgb(118, 75, 162)  # Default blue-purple
+
+    if overdue == 0:
+        return discord.Color.from_rgb(46, 204, 113)  # Green - healthy
+    elif overdue <= 5:
+        return discord.Color.from_rgb(243, 156, 18)  # Yellow - some overdue
+    elif overdue <= 10:
+        return discord.Color.from_rgb(230, 126, 34)  # Orange - multiple overdue
+    else:
+        return discord.Color.from_rgb(231, 76, 60)  # Red - critical
+
+
 class EmbedFactory:
     def __init__(self, color: Optional[discord.Color] = None) -> None:
         self.color = color or DEFAULT_COLOR
@@ -63,26 +144,133 @@ class EmbedFactory:
         board: Dict[str, Any],
         columns: List[Dict[str, Any]],
         stats: Dict[str, int],
+        *,
+        channel_mention: Optional[str] = None,
+        creator_mention: Optional[str] = None,
     ) -> discord.Embed:
+        """Create an enhanced, visually rich board detail embed."""
+        # Determine embed color based on board health
+        embed_color = _calculate_board_health_color(stats)
+
+        # Create title with emoji
+        title = f"📋 {board['name']} · #{board['id']}"
+
+        # Build description with metadata
+        description_parts = []
+        if board.get("description"):
+            description_parts.append(board["description"])
+
+        # Add metadata line
+        metadata = []
+        if creator_mention:
+            metadata.append(f"👤 {creator_mention}")
+        if board.get("created_at"):
+            time_ago = _format_relative_time(board["created_at"])
+            metadata.append(f"📅 Created {time_ago}")
+        if channel_mention:
+            metadata.append(f"📢 {channel_mention}")
+
+        if metadata:
+            description_parts.append("\n" + " • ".join(metadata))
+
+        description = "\n".join(description_parts) if description_parts else "No description"
+
         embed = discord.Embed(
-            title=f"{board['name']} (ID {board['id']})",
-            description=board.get("description") or "—",
-            color=self.color,
+            title=title,
+            description=description,
+            color=embed_color,
         )
+
+        # Columns field with emojis and task counts
+        if columns:
+            column_breakdown = stats.get("column_breakdown", [])
+            column_display = []
+
+            for col in columns:
+                emoji = _get_column_emoji(col["name"])
+                # Find task count for this column
+                task_count = 0
+                for breakdown in column_breakdown:
+                    if breakdown["name"] == col["name"]:
+                        task_count = breakdown.get("task_count", 0)
+                        break
+
+                column_display.append(f"{emoji} **{col['name']}** ({task_count})")
+
+            columns_value = "  •  ".join(column_display)
+        else:
+            columns_value = "No columns configured"
+
         embed.add_field(
-            name="Columns",
-            value=", ".join(col["name"] for col in columns) or "No columns",
+            name="📋 Columns",
+            value=columns_value,
             inline=False,
         )
-        embed.add_field(
-            name="Stats",
-            value=(
-                f"Total Tasks: {stats.get('total', 0)}\n"
-                f"Completed: {stats.get('completed', 0)}\n"
-                f"Overdue: {stats.get('overdue', 0)}"
-            ),
-            inline=False,
-        )
+
+        # Progress Overview
+        total = stats.get("total", 0)
+        completed = stats.get("completed", 0)
+        active = stats.get("active", 0)
+        overdue = stats.get("overdue", 0)
+
+        if total > 0:
+            # Progress bar
+            percentage = int((completed / total) * 100)
+            progress_bar = _create_progress_bar(completed, total, length=16)
+            progress_text = f"{progress_bar} {percentage}% complete\n\n"
+
+            # Stats line
+            stats_parts = []
+            if completed > 0:
+                stats_parts.append(f"✅ **{completed}** completed")
+            if active > 0:
+                stats_parts.append(f"⏳ **{active}** active")
+            if overdue > 0:
+                stats_parts.append(f"🔴 **{overdue}** overdue")
+
+            progress_text += "  •  ".join(stats_parts) if stats_parts else "No tasks"
+
+            # Add activity indicator
+            due_this_week = stats.get("due_this_week", 0)
+            if due_this_week > 0:
+                progress_text += f"\n⚡ **{due_this_week}** task{'s' if due_this_week != 1 else ''} due this week"
+
+            embed.add_field(
+                name="📊 Progress Overview",
+                value=progress_text,
+                inline=False,
+            )
+
+            # Task Distribution by column (if there are active tasks)
+            if active > 0 and column_breakdown:
+                distribution_lines = []
+                for breakdown in column_breakdown:
+                    col_name = breakdown["name"]
+                    task_count = breakdown.get("task_count", 0)
+
+                    if task_count > 0:
+                        emoji = _get_column_emoji(col_name)
+                        # Calculate percentage for this column
+                        col_percentage = int((task_count / active) * 100) if active > 0 else 0
+                        mini_bar = _create_progress_bar(task_count, active, length=8)
+                        distribution_lines.append(
+                            f"{emoji} {col_name:<12} {mini_bar} {col_percentage}% ({task_count})"
+                        )
+
+                if distribution_lines:
+                    embed.add_field(
+                        name="📌 Task Distribution",
+                        value="\n".join(distribution_lines),
+                        inline=False,
+                    )
+        else:
+            # Empty board
+            embed.add_field(
+                name="📊 Progress Overview",
+                value="No tasks yet. Use `/add-task` to create your first task!",
+                inline=False,
+            )
+
         return self._finalize(embed)
 
     def task_detail(

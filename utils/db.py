@@ -383,6 +383,70 @@ class Database:
             "overdue": overdue["overdue"] if overdue else 0,
         }
 
+    async def board_stats_detailed(self, board_id: int) -> Dict[str, Any]:
+        """Get detailed board statistics including per-column breakdown."""
+        # Get basic totals
+        totals = await self._execute(
+            """
+            SELECT
+                COUNT(1) AS total,
+                SUM(CASE WHEN completed THEN 1 ELSE 0 END) AS completed,
+                SUM(CASE WHEN completed = FALSE THEN 1 ELSE 0 END) AS active
+            FROM tasks
+            WHERE board_id = $1
+            """,
+            (board_id,),
+            fetchone=True,
+        )
+
+        # Get overdue count
+        overdue = await self._execute(
+            """
+            SELECT COUNT(1) AS overdue
+            FROM tasks
+            WHERE board_id = $1 AND completed = FALSE AND due_date IS NOT NULL AND due_date < $2
+            """,
+            (board_id, _utcnow()),
+            fetchone=True,
+        )
+
+        # Get tasks due this week
+        from datetime import timedelta
+        week_later = datetime.now(timezone.utc) + timedelta(days=7)
+        due_this_week = await self._execute(
+            """
+            SELECT COUNT(1) AS due_soon
+            FROM tasks
+            WHERE board_id = $1 AND completed = FALSE AND due_date IS NOT NULL
+              AND due_date >= $2 AND due_date <= $3
+            """,
+            (board_id, _utcnow(), week_later.strftime(ISO_FORMAT)),
+            fetchone=True,
+        )
+
+        # Get per-column task counts
+        column_stats = await self._execute(
+            """
+            SELECT c.id, c.name, COUNT(t.id) AS task_count
+            FROM columns c
+            LEFT JOIN tasks t ON t.column_id = c.id AND t.completed = FALSE
+            WHERE c.board_id = $1
+            GROUP BY c.id, c.name
+            ORDER BY c.position
+            """,
+            (board_id,),
+            fetchall=True,
+        )
+
+        return {
+            "total": totals["total"] if totals else 0,
+            "completed": totals["completed"] if totals else 0,
+            "active": totals["active"] if totals else 0,
+            "overdue": overdue["overdue"] if overdue else 0,
+            "due_this_week": due_this_week["due_soon"] if due_this_week else 0,
+            "column_breakdown": [dict(row) for row in column_stats] if column_stats else [],
+        }
+
     async def fetch_due_tasks(self, before_iso: str) -> List[Dict[str, Any]]:
         rows = await self._execute(
             """
