@@ -14,3 +14,4 @@ On production, the `distask-feature-agent.timer` systemd unit runs the generator
 Git pushes from automation still rely on the git credential helper. Ensure the PAT is stored with `git credential approve` (see README for the snippet) so exports succeed after reboots and when the token is rotated.
 
 Status data always comes from PostgreSQL. Manual edits to `feature_requests.md` are overwritten on the next run, so mark completions through commits that include the `FR-<id>` token or via a dedicated admin command.
+To check connectivity manually, supply the password explicitly (for example `PGPASSWORD=distaskpass psql -h localhost -U distask -d distask -c "select now();"`); otherwise tools like `pg_isready` will report “no response” even though the server is healthy.
