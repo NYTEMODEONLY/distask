@@ -34,41 +34,13 @@ class BoardsCog(commands.Cog):
         return results[:25]
 
     @app_commands.command(name="create-board", description="Create a new task board")
-    @app_commands.describe(
-        name="Board name",
-        description="Optional description",
-        channel="Channel where board updates and reminders post",
-    )
     @app_commands.checks.has_permissions(manage_guild=True)
     @app_commands.checks.cooldown(1, 10.0)
-    async def create_board(
-        self,
-        interaction: discord.Interaction,
-        name: str,
-        channel: discord.TextChannel,
-        description: str | None = None,
-    ) -> None:
-        validation = Validator.board_name(name)
-        if not validation.ok:
-            await interaction.response.send_message(
-                embed=self.embeds.message("Invalid Board Name", validation.message, emoji="⚠️"),
-            )
-            return
-        cleaned_name = name.strip()
-        await interaction.response.defer(thinking=True)
-        existing = await self.db.get_board_by_name(interaction.guild_id, cleaned_name)
-        if existing:
-            await interaction.followup.send(
-                embed=self.embeds.message("Duplicate Board", "Choose a unique board name for this server.", emoji="🛑"),
-            )
-            return
-        board_id = await self.db.create_board(interaction.guild_id, channel.id, cleaned_name, description, interaction.user.id)
-        board = await self.db.get_board(interaction.guild_id, board_id)
-        columns = await self.db.fetch_columns(board_id)
-        stats = await self.db.board_stats(board_id)
-        embed = self.embeds.board_detail(board, columns, stats)
-        embed.add_field(name="Updates Channel", value=channel.mention, inline=False)
-        await interaction.followup.send(embed=embed)
+    async def create_board(self, interaction: discord.Interaction) -> None:
+        from .ui import CreateBoardModal
+
+        modal = CreateBoardModal(cog=self, db=self.db, embeds=self.embeds)
+        await interaction.response.send_modal(modal)
 
     @app_commands.command(name="list-boards", description="List all boards in this server")
     @app_commands.checks.cooldown(1, 3.0)
@@ -83,49 +55,156 @@ class BoardsCog(commands.Cog):
         await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="delete-board", description="Delete a board and all its tasks")
-    @app_commands.autocomplete(board=board_autocomplete)
     @app_commands.checks.has_permissions(manage_guild=True)
     @app_commands.checks.cooldown(1, 10.0)
-    async def delete_board(self, interaction: discord.Interaction, board: str) -> None:
-        board_data = await self._resolve_board(interaction, board)
-        await interaction.response.defer(thinking=True)
-        deleted = await self.db.delete_board(interaction.guild_id, board_data["id"])
-        if deleted:
-            await interaction.followup.send(
-                embed=self.embeds.message("Board Deleted", f"**{board_data['name']}** has been archived.", emoji="🗑️"),
+    async def delete_board(self, interaction: discord.Interaction) -> None:
+        from .ui import BoardSelectorView, DeleteBoardConfirmationView
+        from .ui.helpers import get_board_choices
+
+        if not interaction.guild_id:
+            await interaction.response.send_message(
+                embed=self.embeds.message("Guild Only", "Join a server to manage boards.", emoji="⚠️"),
             )
-        else:
-            await interaction.followup.send(
-                embed=self.embeds.message("Not Found", "Unable to locate that board.", emoji="⚠️"),
+            return
+
+        # Check if there are any boards first
+        board_options = await get_board_choices(self.db, interaction.guild_id)
+        if not board_options:
+            await interaction.response.send_message(
+                embed=self.embeds.message(
+                    "No Boards",
+                    "This server has no boards yet. Create one with `/create-board`.",
+                    emoji="📭",
+                ),
             )
+            return
+
+        async def on_board_selected(inter: discord.Interaction, board_id: int, board: dict) -> None:
+            # Show confirmation view
+            confirm_view = DeleteBoardConfirmationView(
+                board_id=board_id,
+                board_name=board["name"],
+                guild_id=inter.guild_id,
+                db=self.db,
+                embeds=self.embeds,
+            )
+            await inter.response.send_message(
+                embed=self.embeds.message(
+                    "Confirm Deletion",
+                    f"Are you sure you want to delete **{board['name']}**? This will remove all tasks and columns.",
+                    emoji="⚠️",
+                ),
+                view=confirm_view,
+            )
+
+        view = BoardSelectorView(
+            guild_id=interaction.guild_id,
+            db=self.db,
+            embeds=self.embeds,
+            on_select=on_board_selected,
+            placeholder="Select a board to delete...",
+            initial_options=board_options,
+        )
+        await interaction.response.send_message(
+            embed=self.embeds.message("Delete Board", "Select a board to delete:", emoji="🗑️"),
+            view=view,
+        )
 
     @app_commands.command(name="view-board", description="View a board's configuration")
-    @app_commands.autocomplete(board=board_autocomplete)
     @app_commands.checks.cooldown(1, 3.0)
-    async def view_board(self, interaction: discord.Interaction, board: str) -> None:
-        board_data = await self._resolve_board(interaction, board)
-        columns = await self.db.fetch_columns(board_data["id"])
-        stats = await self.db.board_stats(board_data["id"])
-        embed = self.embeds.board_detail(board_data, columns, stats)
-        await interaction.response.send_message(embed=embed)
+    async def view_board(self, interaction: discord.Interaction) -> None:
+        from .ui import BoardSelectorView
+        from .ui.helpers import get_board_choices
+
+        if not interaction.guild_id:
+            await interaction.response.send_message(
+                embed=self.embeds.message("Guild Only", "Join a server to manage boards.", emoji="⚠️"),
+            )
+            return
+
+        # Check if there are any boards first
+        board_options = await get_board_choices(self.db, interaction.guild_id)
+        if not board_options:
+            await interaction.response.send_message(
+                embed=self.embeds.message(
+                    "No Boards",
+                    "This server has no boards yet. Create one with `/create-board`.",
+                    emoji="📭",
+                ),
+            )
+            return
+
+        async def on_board_selected(inter: discord.Interaction, board_id: int, board: dict) -> None:
+            await inter.response.defer(thinking=True)
+            columns = await self.db.fetch_columns(board_id)
+            stats = await self.db.board_stats(board_id)
+            embed = self.embeds.board_detail(board, columns, stats)
+            await inter.followup.send(embed=embed)
+
+        view = BoardSelectorView(
+            guild_id=interaction.guild_id,
+            db=self.db,
+            embeds=self.embeds,
+            on_select=on_board_selected,
+            placeholder="Select a board to view...",
+            initial_options=board_options,
+        )
+        await interaction.response.send_message(
+            embed=self.embeds.message("View Board", "Select a board to view its configuration:", emoji="📋"),
+            view=view,
+        )
 
     @app_commands.command(name="board-stats", description="Show quick stats for a board")
-    @app_commands.autocomplete(board=board_autocomplete)
     @app_commands.checks.cooldown(1, 3.0)
-    async def board_stats(self, interaction: discord.Interaction, board: str) -> None:
-        board_data = await self._resolve_board(interaction, board)
-        stats = await self.db.board_stats(board_data["id"])
-        embed = self.embeds.message(
-            "Board Pulse",
-            (
-                f"**{board_data['name']}**\n"
-                f"• Total: {stats['total']}\n"
-                f"• Complete: {stats['completed']}\n"
-                f"• Overdue: {stats['overdue']}"
-            ),
-            emoji="📊",
+    async def board_stats(self, interaction: discord.Interaction) -> None:
+        from .ui import BoardSelectorView
+        from .ui.helpers import get_board_choices
+
+        if not interaction.guild_id:
+            await interaction.response.send_message(
+                embed=self.embeds.message("Guild Only", "Join a server to manage boards.", emoji="⚠️"),
+            )
+            return
+
+        # Check if there are any boards first
+        board_options = await get_board_choices(self.db, interaction.guild_id)
+        if not board_options:
+            await interaction.response.send_message(
+                embed=self.embeds.message(
+                    "No Boards",
+                    "This server has no boards yet. Create one with `/create-board`.",
+                    emoji="📭",
+                ),
+            )
+            return
+
+        async def on_board_selected(inter: discord.Interaction, board_id: int, board: dict) -> None:
+            await inter.response.defer(thinking=True)
+            stats = await self.db.board_stats(board_id)
+            embed = self.embeds.message(
+                "Board Pulse",
+                (
+                    f"**{board['name']}**\n"
+                    f"• Total: {stats['total']}\n"
+                    f"• Complete: {stats['completed']}\n"
+                    f"• Overdue: {stats['overdue']}"
+                ),
+                emoji="📊",
+            )
+            await inter.followup.send(embed=embed)
+
+        view = BoardSelectorView(
+            guild_id=interaction.guild_id,
+            db=self.db,
+            embeds=self.embeds,
+            on_select=on_board_selected,
+            placeholder="Select a board to view stats...",
+            initial_options=board_options,
         )
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(
+            embed=self.embeds.message("Board Stats", "Select a board to view its stats:", emoji="📊"),
+            view=view,
+        )
 
     async def _resolve_board(self, interaction: discord.Interaction, board_value: str):
         if not interaction.guild_id:
