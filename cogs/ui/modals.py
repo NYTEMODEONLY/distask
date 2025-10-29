@@ -88,11 +88,21 @@ class TaskIDInputModal(discord.ui.Modal):
 class CreateBoardModal(discord.ui.Modal):
     """Modal for creating a new board."""
 
-    def __init__(self, cog, db: "Database", embeds: "EmbedFactory") -> None:
+    def __init__(
+        self,
+        cog,
+        db: "Database",
+        embeds: "EmbedFactory",
+        *,
+        channel_id: Optional[int] = None,
+        channel_name: Optional[str] = None,
+    ) -> None:
         super().__init__(title="Create New Board", timeout=300)
         self.cog = cog
         self.db = db
         self.embeds = embeds
+        self.channel_id = channel_id
+        self.channel_name = channel_name
 
         self.board_name = discord.ui.TextInput(
             label="Board Name",
@@ -108,62 +118,56 @@ class CreateBoardModal(discord.ui.Modal):
             required=False,
             style=discord.TextStyle.paragraph,
         )
-        self.channel_input = discord.ui.TextInput(
-            label="Channel (ID or #mention)",
-            placeholder="#tasks or 123456789",
-            required=True,
-            style=discord.TextStyle.short,
-            max_length=100,
-        )
         self.add_item(self.board_name)
         self.add_item(self.description)
-        self.add_item(self.channel_input)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         from utils.validators import Validator
-        from .helpers import parse_channel_mention_or_id
 
         validation = Validator.board_name(self.board_name.value)
         if not validation.ok:
             await interaction.response.send_message(
                 embed=self.embeds.message("Invalid Board Name", validation.message, emoji="⚠️"),
+                ephemeral=True,
             )
             return
 
         cleaned_name = self.board_name.value.strip()
         desc = self.description.value.strip() if self.description.value else None
 
-        # Parse channel
-        channel_id = parse_channel_mention_or_id(self.channel_input.value)
-        if not channel_id:
-            await interaction.response.send_message(
-                embed=self.embeds.message(
-                    "Invalid Channel",
-                    "Please provide a valid channel mention (#channel) or channel ID.",
-                    emoji="⚠️",
-                ),
-            )
-            return
-
-        # Verify channel exists
-        try:
-            channel = await interaction.guild.fetch_channel(channel_id)
-            if not isinstance(channel, discord.TextChannel):
+        # Use pre-selected channel if available, otherwise fetch from channel_id
+        if self.channel_id:
+            try:
+                channel = await interaction.guild.fetch_channel(self.channel_id)
+                if not isinstance(channel, discord.TextChannel):
+                    await interaction.response.send_message(
+                        embed=self.embeds.message(
+                            "Invalid Channel",
+                            "The selected channel is not a text channel.",
+                            emoji="⚠️",
+                        ),
+                        ephemeral=True,
+                    )
+                    return
+            except (discord.NotFound, discord.Forbidden):
                 await interaction.response.send_message(
                     embed=self.embeds.message(
-                        "Invalid Channel",
-                        "Please specify a text channel.",
+                        "Channel Not Found",
+                        "I couldn't find that channel. Make sure I have access to it.",
                         emoji="⚠️",
                     ),
+                    ephemeral=True,
                 )
                 return
-        except (discord.NotFound, discord.Forbidden):
+        else:
+            # Fallback: should not happen with new flow, but keep for backward compatibility
             await interaction.response.send_message(
                 embed=self.embeds.message(
-                    "Channel Not Found",
-                    "I couldn't find that channel. Make sure I have access to it.",
+                    "Channel Required",
+                    "Please select a channel first.",
                     emoji="⚠️",
                 ),
+                ephemeral=True,
             )
             return
 
