@@ -132,7 +132,7 @@ Four-pass pipeline for managing the feature backlog:
    - vote_bonus: `log1p(👍 - 👎) * 2`
    - duplicate_penalty: `log1p(🔁) * 1.5`
    - Defaults to 5 when unset
-4. **Sync Completion**: Scans git commits for `FR-<id>` or `feature-request #<id>` tokens, marks matching requests as completed with commit metadata
+4. **Sync Completion**: Scans git commits and merged GitHub PRs for `FR-<id>` or `feature-request #<id>` tokens, marks matching requests as completed with commit metadata and PR numbers
 
 Outputs:
 - `automation/feature_queue.json`: Full scored + sorted queue
@@ -164,12 +164,18 @@ Deployed via `distask-web.service`, proxied by Nginx with TLS.
 
 ## Commit Workflow for Feature Requests
 
+**PR-First Approach:** Always create a Pull Request before implementing to get code review. See [Feature Request Workflow Guide](docs/FEATURE_REQUEST_WORKFLOW.md) for complete details.
+
 When implementing a feature request:
 
-1. Branch naming: `feature/<id>-short-slug` (e.g., `feature/123-modal-export`)
-2. Include `FR-123` or `feature-request #123` in at least one commit message
-3. Automation scans commits and marks the request `completed` with commit SHA and timestamp
-4. Without the marker, the request stays `pending` and manual edits to `feature_requests.md` will be overwritten
+1. **Create PR first** on branch `feature/<id>-short-slug` (e.g., `feature/123-modal-export`)
+2. **Get code review** before implementing
+3. **Install git hooks** (`./scripts/setup-git-hooks.sh`) to auto-inject FR markers
+4. Include `FR-123` or `feature-request #123` in commit messages and PR title/description
+5. Automation scans **merged PRs** (title + description) and **commits** to mark requests `completed`
+6. Without the marker, the request stays `pending` and manual edits to `feature_requests.md` will be overwritten
+
+**See also:** [docs/FEATURE_REQUEST_WORKFLOW.md](docs/FEATURE_REQUEST_WORKFLOW.md) for the complete workflow guide.
 
 ## Deployment
 

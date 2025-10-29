@@ -14,6 +14,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 import sys
 import math
 
+import aiohttp
 from dotenv import load_dotenv
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -273,6 +274,91 @@ def extract_feature_ids(message: str) -> List[int]:
     return list(sorted(set(ids)))
 
 
+async def scan_github_prs(
+    token: str,
+    owner: str,
+    repo: str,
+    last_pr_number: Optional[int],
+) -> List[Dict[str, str]]:
+    """
+    Scan merged GitHub PRs for FR markers.
+    Returns list of PRs with extracted feature IDs.
+    """
+    prs: List[Dict[str, str]] = []
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls"
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "DisTask-Feature-Agent",
+    }
+    params: Dict[str, str] = {
+        "state": "closed",
+        "sort": "updated",
+        "direction": "desc",
+        "per_page": "100",
+    }
+    
+    timeout = aiohttp.ClientTimeout(total=30)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        try:
+            page = 1
+            while True:
+                params["page"] = str(page)
+                async with session.get(url, headers=headers, params=params) as response:
+                    if response.status == 403:
+                        logging.warning("GitHub API rate limit hit; skipping PR scan")
+                        break
+                    if response.status != 200:
+                        text = await response.text()
+                        logging.error("Failed to fetch PRs from GitHub (%s): %s", response.status, text)
+                        break
+                    
+                    pr_list = await response.json()
+                    if not pr_list:
+                        break
+                    
+                    for pr in pr_list:
+                        # Only process merged PRs
+                        if not pr.get("merged_at"):
+                            continue
+                        
+                        pr_number = pr.get("number")
+                        if pr_number is None:
+                            continue
+                        
+                        # Stop if we've reached PRs we've already processed
+                        if last_pr_number and pr_number <= last_pr_number:
+                            return prs
+                        
+                        # Extract feature IDs from title and body
+                        title = pr.get("title", "")
+                        body = pr.get("body", "") or ""
+                        merge_commit_sha = pr.get("merge_commit_sha")
+                        
+                        # Combine title and body for scanning
+                        combined_text = f"{title}\n{body}"
+                        feature_ids = extract_feature_ids(combined_text)
+                        
+                        if feature_ids:
+                            prs.append({
+                                "number": str(pr_number),
+                                "title": title,
+                                "merge_commit_sha": merge_commit_sha or "",
+                                "merged_at": pr.get("merged_at", ""),
+                                "feature_ids": ",".join(str(fid) for fid in feature_ids),
+                            })
+                    
+                    # If we got fewer than per_page, we're done
+                    if len(pr_list) < 100:
+                        break
+                    page += 1
+                    
+        except aiohttp.ClientError as exc:
+            logging.error("GitHub API error while scanning PRs: %s", exc)
+    
+    return prs
+
+
 def write_outputs(queue: List[Dict[str, object]]) -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     OUTPUT_JSON.write_text(json.dumps({"generated_at": utcnow_iso(), "items": queue}, indent=2))
@@ -394,11 +480,15 @@ async def main() -> None:
 
         write_outputs(queue)
 
-        # Sync with git history
+        # Sync with git history and GitHub PRs
         state = load_state()
         last_commit = state.get("last_commit")
-        commits = get_commit_range(last_commit)
+        last_pr_number = state.get("last_pr_number")
+        
         completed_ids: List[int] = []
+        
+        # Process commits
+        commits = get_commit_range(last_commit)
         for commit in commits:
             commit_ids = extract_feature_ids(commit["message"])
             if not commit_ids:
@@ -411,24 +501,67 @@ async def main() -> None:
                     commit_message=commit["message"],
                 )
                 completed_ids.append(feature_id)
+        
+        # Process merged PRs (if GitHub credentials available)
+        github_token = os.getenv("GITHUB_TOKEN") or os.getenv("github_token")
+        repo_owner = os.getenv("REPO_OWNER") or os.getenv("repo_owner")
+        repo_name = os.getenv("REPO_NAME") or os.getenv("repo_name")
+        
+        if github_token and repo_owner and repo_name:
+            try:
+                prs = await scan_github_prs(github_token, repo_owner, repo_name, last_pr_number)
+                max_pr_number = last_pr_number or 0
+                
+                for pr in prs:
+                    pr_number = int(pr["number"])
+                    if pr_number > max_pr_number:
+                        max_pr_number = pr_number
+                    
+                    feature_ids_str = pr.get("feature_ids", "")
+                    if not feature_ids_str:
+                        continue
+                    
+                    feature_ids = [int(fid.strip()) for fid in feature_ids_str.split(",") if fid.strip().isdigit()]
+                    merge_commit_sha = pr.get("merge_commit_sha", "")
+                    pr_title = pr.get("title", "")
+                    
+                    for feature_id in feature_ids:
+                        # Check if already marked via commit scan
+                        if feature_id not in completed_ids:
+                            logging.info("Marking feature #%s as completed via PR #%s (%s)", feature_id, pr_number, merge_commit_sha)
+                            await db.mark_feature_completed(
+                                feature_id,
+                                commit_hash=merge_commit_sha,
+                                commit_message=f"PR #{pr_number}: {pr_title}",
+                            )
+                            completed_ids.append(feature_id)
+                        else:
+                            logging.debug("Feature #%s already marked via commit, skipping PR #%s", feature_id, pr_number)
+                
+                last_pr_number = max_pr_number
+            except Exception as exc:
+                logging.error("Failed to scan GitHub PRs: %s", exc)
+        else:
+            logging.debug("GitHub credentials not configured; skipping PR scan")
 
         head_commit = _get_head_commit()
         save_state(
             {
                 "last_commit": head_commit,
+                "last_pr_number": last_pr_number,
                 "last_run_at": utcnow_iso(),
                 "completed_ids": completed_ids,
                 "queue_count": len(queue),
             }
         )
 
-        github_token = os.getenv("GITHUB_TOKEN") or os.getenv("github_token")
-        if github_token:
+        # Export feature requests to GitHub (reuse credentials from PR scan)
+        if github_token and repo_owner and repo_name:
             await export_to_github(
                 db,
                 token=github_token,
-                owner=os.getenv("REPO_OWNER") or os.getenv("repo_owner"),
-                repo=os.getenv("REPO_NAME") or os.getenv("repo_name"),
+                owner=repo_owner,
+                repo=repo_name,
             )
     finally:
         if db_ready and db is not None:
