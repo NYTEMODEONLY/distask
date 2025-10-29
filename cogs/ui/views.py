@@ -152,24 +152,27 @@ class CreateBoardFlowView(discord.ui.View):
         try:
             channel = select.values[0]
             
-            # ChannelSelect with channel_types filter already ensures text channels
-            # Just verify it's messageable and get the ID
-            if not isinstance(channel, discord.abc.Messageable):
-                await interaction.response.send_message(
-                    embed=self.embeds.message("Invalid Channel", "Selected channel cannot receive messages.", emoji="⚠️"),
-                    ephemeral=True,
-                )
-                return
-
+            # ChannelSelect with channel_types=[discord.ChannelType.text] already filters to text channels only
+            # Partial channel objects from ChannelSelect may not pass isinstance checks,
+            # so we trust the filter and just extract the ID
+            # Full validation will happen in the modal when we fetch the complete channel
+            
             # Get channel ID and name safely
             self.selected_channel_id = channel.id
-            if hasattr(channel, 'name'):
+            
+            # Try to get channel name - handle both full and partial channel objects
+            if hasattr(channel, 'name') and channel.name:
                 self.selected_channel_name = channel.name
-            elif hasattr(channel, 'mention'):
-                # Fallback: try to get name from mention or use ID
-                self.selected_channel_name = channel.mention.replace('<#', '').replace('>', '')
             else:
-                self.selected_channel_name = f"Channel {channel.id}"
+                # Try to get from guild cache or use ID as fallback
+                try:
+                    full_channel = interaction.guild.get_channel(channel.id)
+                    if full_channel and hasattr(full_channel, 'name'):
+                        self.selected_channel_name = full_channel.name
+                    else:
+                        self.selected_channel_name = f"Channel {channel.id}"
+                except Exception:
+                    self.selected_channel_name = f"Channel {channel.id}"
 
             # Show modal for board name and description
             from .modals import CreateBoardModal
