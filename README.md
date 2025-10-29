@@ -112,7 +112,7 @@ Additional behavior:
 1. **Ingest & normalise** – fetches the latest rows from PostgreSQL (or falls back to `feature_requests.md`) so the workload survives restarts.
 2. **Detect duplicates** – uses fuzzy matching on title + suggestion, automatically tagging high-confidence duplicates and logging near-matches for triage.
 3. **Score & queue** – combines `priority + ease + vote_bonus - duplicate_penalty` (defaults to `5` when unset; vote bonus is derived from 👍/👎 reaction counts and duplicate penalty from 🔁 reactions), storing results on the request and emitting a prioritised queue at `automation/feature_queue.{json,md}`.
-4. **Sync completion** – scans new git commits for tokens such as `FR-123` or `feature-request #123`, then marks matching feature requests as completed (with commit metadata and timestamps).
+4. **Sync completion** – scans new git commits and merged GitHub PRs for tokens such as `FR-123` or `feature-request #123`, then marks matching feature requests as completed (with commit metadata, PR numbers, and timestamps).
 
 Run it manually or from CI/cron:
 
@@ -125,11 +125,18 @@ The agent maintains its own cursor (`data/feature_agent_state.json`, ignored by 
 
 ### Implementation Workflow
 
-- Start implementation work on a branch named `feature/<id>-short-slug` (e.g. `feature/123-modal-export`).
-- Include `FR-123` (or `feature-request #123`) in at least one commit message; the automation uses these markers to move the request to `completed`.
-- Without that marker the database keeps the request `pending`, so the next automation run will override any manual Markdown edits and reset the status.
-- Post-deploy, re-run the agent to confirm the request is marked as live and the queue reflects the next priority item.
-- The VPS now runs the automation nightly at 03:30 CST via `distask-feature-agent.timer`. Manually trigger a run any time with `sudo systemctl start distask-feature-agent.service`.
+**PR-First Approach:** Create a Pull Request before implementing to get code review and discuss the approach. See [Feature Request Workflow Guide](docs/FEATURE_REQUEST_WORKFLOW.md) for complete details.
+
+Quick reference:
+- **Create PR first** on a branch named `feature/<id>-short-slug` (e.g. `feature/123-modal-export`)
+- **Get code review** before implementing
+- **Include `FR-123`** (or `feature-request #123`) in commit messages and PR title/description
+- **Install git hooks** (`./scripts/setup-git-hooks.sh`) to auto-inject FR markers
+- Automation scans both **merged PRs** and **commits** to detect completion
+- Without FR markers, the database keeps the request `pending`; manual edits will be overwritten
+- Post-merge, automation runs nightly at 03:30 CST via `distask-feature-agent.timer`; manually trigger with `sudo systemctl start distask-feature-agent.service`
+
+**See also:** [docs/FEATURE_REQUEST_WORKFLOW.md](docs/FEATURE_REQUEST_WORKFLOW.md) for the complete workflow guide.
 
 ### Installing the Timer on a Fresh Host
 
