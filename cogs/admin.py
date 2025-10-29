@@ -358,6 +358,13 @@ class AdminCog(commands.Cog):
             inline=False,
         )
         
+        # Community section
+        embed.add_field(
+            name="💬 Community",
+            value="[Join the official DisTask Discord](https://discord.gg/H5J4Bq2A2c) • Get support, share feedback, and stay updated!",
+            inline=False,
+        )
+        
         # Footer note
         embed.set_footer(text="Need more? Check the README bundled with the bot. • distask.xyz")
         embed.timestamp = datetime.now(timezone.utc)
