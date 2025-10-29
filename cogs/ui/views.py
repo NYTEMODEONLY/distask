@@ -123,6 +123,58 @@ class NotificationToggleView(discord.ui.View):
         self.stop()
 
 
+class CreateBoardFlowView(discord.ui.View):
+    """View for the /create-board flow: channel selector → modal."""
+
+    def __init__(
+        self,
+        *,
+        guild_id: int,
+        db: "Database",
+        embeds: "EmbedFactory",
+        timeout: float = 300.0,
+    ) -> None:
+        super().__init__(timeout=timeout)
+        self.guild_id = guild_id
+        self.db = db
+        self.embeds = embeds
+        self.selected_channel_id: Optional[int] = None
+        self.selected_channel_name: Optional[str] = None
+
+    @discord.ui.channel_select(
+        placeholder="Select a channel for board updates...",
+        channel_types=[discord.ChannelType.text],
+        min_values=1,
+        max_values=1,
+        row=0,
+    )
+    async def channel_select(self, interaction: discord.Interaction, select: discord.ui.ChannelSelect) -> None:
+        channel = select.values[0]
+        
+        if not isinstance(channel, discord.TextChannel):
+            await interaction.response.send_message(
+                embed=self.embeds.message("Invalid Channel", "Please select a text channel.", emoji="⚠️"),
+                ephemeral=True,
+            )
+            return
+
+        self.selected_channel_id = channel.id
+        self.selected_channel_name = channel.name
+
+        # Show modal for board name and description
+        from .modals import CreateBoardModal
+        
+        modal = CreateBoardModal(
+            cog=None,  # Not needed since we're handling channel separately
+            db=self.db,
+            embeds=self.embeds,
+            channel_id=self.selected_channel_id,
+            channel_name=self.selected_channel_name,
+        )
+        await interaction.response.send_modal(modal)
+        self.stop()
+
+
 class AddTaskFlowView(discord.ui.View):
     """View for the /add-task flow: board selector → column selector → modal."""
 

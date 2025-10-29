@@ -37,10 +37,27 @@ class BoardsCog(commands.Cog):
     @app_commands.checks.has_permissions(manage_guild=True)
     @app_commands.checks.cooldown(1, 10.0)
     async def create_board(self, interaction: discord.Interaction) -> None:
-        from .ui import CreateBoardModal
+        from .ui import CreateBoardFlowView
 
-        modal = CreateBoardModal(cog=self, db=self.db, embeds=self.embeds)
-        await interaction.response.send_modal(modal)
+        if not interaction.guild_id:
+            await interaction.response.send_message(
+                embed=self.embeds.message("Guild Only", "Join a server to create boards.", emoji="⚠️"),
+            )
+            return
+
+        view = CreateBoardFlowView(
+            guild_id=interaction.guild_id,
+            db=self.db,
+            embeds=self.embeds,
+        )
+        await interaction.response.send_message(
+            embed=self.embeds.message(
+                "Create Board",
+                "Select a channel where board updates and reminders will be posted:",
+                emoji="📋",
+            ),
+            view=view,
+        )
 
     @app_commands.command(name="list-boards", description="List all boards in this server")
     @app_commands.checks.cooldown(1, 3.0)
