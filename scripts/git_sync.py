@@ -145,7 +145,7 @@ def pull_changes(branch: str) -> bool:
     """Pull latest changes from GitHub."""
     try:
         result = subprocess.run(
-            ["git", "pull", "origin", branch],
+            ["git", "pull", "origin", branch, "--no-rebase"],
             cwd=ROOT_DIR,
             capture_output=True,
             text=True,
