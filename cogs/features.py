@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import json
 import logging
-from typing import Optional
+from typing import List, Optional
 
 import discord
 from discord import app_commands
@@ -317,3 +318,237 @@ class FeaturesCog(commands.Cog):
         if up_delta == down_delta == dup_delta == 0:
             return
         await self.db.adjust_feature_votes(feature["id"], up_delta=up_delta, down_delta=down_delta, duplicate_delta=dup_delta)
+
+    @app_commands.command(name="check-duplicates", description="Check for duplicate or similar feature requests")
+    @app_commands.checks.cooldown(1, 5.0)
+    @app_commands.describe(feature_id="Optional: Check duplicates for a specific feature request ID")
+    async def check_duplicates(self, interaction: discord.Interaction, feature_id: Optional[int] = None) -> None:
+        """Check for duplicate or similar feature requests."""
+        if interaction.guild_id is None:
+            await interaction.response.send_message(
+                embed=self.embeds.message(
+                    "Guild Only",
+                    "Please run /check-duplicates inside a Discord server.",
+                    emoji="🏠",
+                ),
+            )
+            return
+
+        try:
+            if feature_id:
+                # Check duplicates for specific feature (global - like automation)
+                feature = await self.db.get_feature_request(feature_id)
+                if not feature:
+                    await interaction.response.send_message(
+                        embed=self.embeds.message(
+                            "Not Found",
+                            f"Feature request #{feature_id} does not exist.",
+                            emoji="❌",
+                        ),
+                    )
+                    return
+
+                duplicates = await self._find_duplicates_for_feature(feature_id)
+                embed = self._build_duplicate_embed(feature, duplicates)
+            else:
+                # List all duplicates (global - like automation)
+                all_duplicates = await self._find_all_duplicates()
+                embed = self._build_all_duplicates_embed(all_duplicates)
+
+            await interaction.response.send_message(embed=embed)
+
+        except Exception as exc:
+            self.logger.exception("Failed to check duplicates: %s", exc)
+            await interaction.response.send_message(
+                embed=self.embeds.message(
+                    "Error",
+                    "Failed to check for duplicates. Please try again later.",
+                    emoji="🔥",
+                ),
+            )
+
+    async def _find_duplicates_for_feature(self, feature_id: int) -> List[dict]:
+        """Find duplicates for a specific feature request (global across all servers, like automation)."""
+        feature = await self.db.get_feature_request(feature_id)
+        if not feature:
+            return []
+
+        # Fetch ALL features from ALL servers (like automation does)
+        all_features = await self.db.fetch_feature_requests()
+        duplicates: List[dict] = []
+
+        # Check if marked as duplicate
+        if feature.get("duplicate_of"):
+            parent = await self.db.get_feature_request(feature["duplicate_of"])
+            if parent:
+                duplicates.append({
+                    "id": parent["id"],
+                    "title": parent.get("title", "Unknown"),
+                    "relationship": "marked_duplicate_of",
+                    "confidence": None,
+                })
+
+        # Check analysis_data for similar candidates (from automation, already global)
+        analysis_data = feature.get("analysis_data")
+        if analysis_data:
+            if isinstance(analysis_data, str):
+                analysis_data = json.loads(analysis_data)
+            similar_ids = analysis_data.get("similar_candidates", [])
+            for similar_id in similar_ids:
+                similar_feature = await self.db.get_feature_request(similar_id)
+                if similar_feature:
+                    duplicates.append({
+                        "id": similar_id,
+                        "title": similar_feature.get("title", "Unknown"),
+                        "relationship": "similar",
+                        "confidence": None,
+                    })
+
+        # Find other features that are duplicates of this one (global)
+        for other_feature in all_features:
+            if other_feature["id"] == feature_id:
+                continue
+            if other_feature.get("duplicate_of") == feature_id:
+                duplicates.append({
+                    "id": other_feature["id"],
+                    "title": other_feature.get("title", "Unknown"),
+                    "relationship": "duplicate_of_this",
+                    "confidence": None,
+                })
+
+        return duplicates
+
+    async def _find_all_duplicates(self) -> List[dict]:
+        """Find all feature requests marked as duplicates (global across all servers, like automation)."""
+        # Fetch ALL features from ALL servers (like automation does)
+        all_features = await self.db.fetch_feature_requests()
+        duplicates: List[dict] = []
+
+        for feature in all_features:
+            if feature.get("duplicate_of"):
+                parent_id = feature["duplicate_of"]
+                parent = await self.db.get_feature_request(parent_id)
+                if parent:
+                    duplicates.append({
+                        "duplicate_id": feature["id"],
+                        "duplicate_title": feature.get("title", "Unknown"),
+                        "parent_id": parent_id,
+                        "parent_title": parent.get("title", "Unknown"),
+                        "status": feature.get("status", "pending"),
+                    })
+
+        return duplicates
+
+    def _build_duplicate_embed(self, feature: dict, duplicates: List[dict]) -> discord.Embed:
+        """Build embed showing duplicates for a specific feature."""
+        title = feature.get("title", "Unknown")
+        feature_id = feature.get("id")
+
+        embed = discord.Embed(
+            title=f"🔍 Duplicate Check: Feature #{feature_id}",
+            description=f"**{title}**",
+            color=discord.Color.orange(),
+        )
+
+        if not duplicates:
+            embed.add_field(
+                name="✅ No Duplicates Found",
+                value="This feature request appears to be unique.",
+                inline=False,
+            )
+        else:
+            grouped = {
+                "marked_duplicate_of": [],
+                "duplicate_of_this": [],
+                "similar": [],
+            }
+            for dup in duplicates:
+                rel = dup.get("relationship", "similar")
+                if rel in grouped:
+                    grouped[rel].append(dup)
+
+            if grouped["marked_duplicate_of"]:
+                dup_info = grouped["marked_duplicate_of"][0]
+                embed.add_field(
+                    name="📋 Marked as Duplicate Of",
+                    value=f"**#{dup_info['id']}**: {dup_info['title']}",
+                    inline=False,
+                )
+
+            if grouped["duplicate_of_this"]:
+                dup_list = "\n".join([
+                    f"**#{d['id']}**: {d['title']}"
+                    for d in grouped["duplicate_of_this"]
+                ])
+                embed.add_field(
+                    name="🔗 Duplicates of This Feature",
+                    value=dup_list or "None",
+                    inline=False,
+                )
+
+            if grouped["similar"]:
+                similar_list = "\n".join([
+                    f"**#{d['id']}**: {d['title']}"
+                    for d in grouped["similar"][:5]  # Limit to 5
+                ])
+                if len(grouped["similar"]) > 5:
+                    similar_list += f"\n*...and {len(grouped['similar']) - 5} more*"
+                embed.add_field(
+                    name="🔀 Similar Requests",
+                    value=similar_list or "None",
+                    inline=False,
+                )
+
+        embed.set_footer(text=f"View all requests: {GITHUB_LINK}")
+        return embed
+
+    def _build_all_duplicates_embed(self, duplicates: List[dict]) -> discord.Embed:
+        """Build embed showing all duplicates."""
+        embed = discord.Embed(
+            title="🔍 All Duplicate Feature Requests",
+            description=f"Found {len(duplicates)} feature request(s) marked as duplicates.",
+            color=discord.Color.orange(),
+        )
+
+        if not duplicates:
+            embed.add_field(
+                name="✅ No Duplicates",
+                value="No feature requests are currently marked as duplicates.",
+                inline=False,
+            )
+        else:
+            # Group by parent
+            grouped: dict = {}
+            for dup in duplicates:
+                parent_id = dup["parent_id"]
+                if parent_id not in grouped:
+                    grouped[parent_id] = {
+                        "parent_title": dup["parent_title"],
+                        "duplicates": [],
+                    }
+                grouped[parent_id]["duplicates"].append({
+                    "id": dup["duplicate_id"],
+                    "title": dup["duplicate_title"],
+                })
+
+            # Display up to 10 groups
+            for idx, (parent_id, group) in enumerate(list(grouped.items())[:10]):
+                dup_list = "\n".join([
+                    f"**#{d['id']}**: {d['title']}"
+                    for d in group["duplicates"]
+                ])
+                embed.add_field(
+                    name=f"📋 #{parent_id}: {group['parent_title']}",
+                    value=f"Duplicates:\n{dup_list}",
+                    inline=False,
+                )
+
+            if len(grouped) > 10:
+                embed.add_field(
+                    name="...",
+                    value=f"*And {len(grouped) - 10} more duplicate groups*",
+                    inline=False,
+                )
+
+        embed.set_footer(text=f"View all requests: {GITHUB_LINK}")
+        return embed
