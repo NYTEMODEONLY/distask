@@ -135,37 +135,74 @@ class CreateBoardModal(discord.ui.Modal):
         cleaned_name = self.board_name.value.strip()
         desc = self.description.value.strip() if self.description.value else None
 
-        # Use pre-selected channel if available, otherwise fetch from channel_id
-        if self.channel_id:
-            try:
-                channel = await interaction.guild.fetch_channel(self.channel_id)
-                if not isinstance(channel, discord.TextChannel):
-                    await interaction.response.send_message(
-                        embed=self.embeds.message(
-                            "Invalid Channel",
-                            "The selected channel is not a text channel.",
-                            emoji="⚠️",
-                        ),
-                        ephemeral=True,
-                    )
-                    return
-            except (discord.NotFound, discord.Forbidden):
-                await interaction.response.send_message(
-                    embed=self.embeds.message(
-                        "Channel Not Found",
-                        "I couldn't find that channel. Make sure I have access to it.",
-                        emoji="⚠️",
-                    ),
-                    ephemeral=True,
-                )
-                return
-        else:
-            # Fallback: should not happen with new flow, but keep for backward compatibility
+        # Use pre-selected channel if available
+        if not self.channel_id:
             await interaction.response.send_message(
                 embed=self.embeds.message(
                     "Channel Required",
                     "Please select a channel first.",
                     emoji="⚠️",
+                ),
+                ephemeral=True,
+            )
+            return
+        
+        # Verify channel exists and is accessible
+        try:
+            channel = await interaction.guild.fetch_channel(self.channel_id)
+            
+            # Check channel type - more flexible check
+            if channel.type != discord.ChannelType.text:
+                await interaction.response.send_message(
+                    embed=self.embeds.message(
+                        "Invalid Channel",
+                        "The selected channel is not a text channel.",
+                        emoji="⚠️",
+                    ),
+                    ephemeral=True,
+                )
+                return
+            
+            # Ensure it's messageable
+            if not isinstance(channel, discord.abc.Messageable):
+                await interaction.response.send_message(
+                    embed=self.embeds.message(
+                        "Invalid Channel",
+                        "Selected channel cannot receive messages.",
+                        emoji="⚠️",
+                    ),
+                    ephemeral=True,
+                )
+                return
+                
+        except discord.NotFound:
+            await interaction.response.send_message(
+                embed=self.embeds.message(
+                    "Channel Not Found",
+                    "I couldn't find that channel. It may have been deleted.",
+                    emoji="⚠️",
+                ),
+                ephemeral=True,
+            )
+            return
+        except discord.Forbidden:
+            await interaction.response.send_message(
+                embed=self.embeds.message(
+                    "Access Denied",
+                    "I don't have permission to access that channel.",
+                    emoji="⚠️",
+                ),
+                ephemeral=True,
+            )
+            return
+        except Exception as e:
+            logger = logging.getLogger("distask.create_board")
+            logger.exception("Error fetching channel %s: %s", self.channel_id, e)
+            await interaction.response.send_message(
+                embed=self.embeds.message(
+                    "Channel Error",
+                    "An error occurred while accessing the channel. Please try again.",
+                    emoji="🔥",
                 ),
                 ephemeral=True,
             )

@@ -149,30 +149,53 @@ class CreateBoardFlowView(discord.ui.View):
         row=0,
     )
     async def channel_select(self, interaction: discord.Interaction, select: discord.ui.ChannelSelect) -> None:
-        channel = select.values[0]
-        
-        if not isinstance(channel, discord.TextChannel):
-            await interaction.response.send_message(
-                embed=self.embeds.message("Invalid Channel", "Please select a text channel.", emoji="⚠️"),
-                ephemeral=True,
+        try:
+            channel = select.values[0]
+            
+            # ChannelSelect with channel_types filter already ensures text channels
+            # Just verify it's messageable and get the ID
+            if not isinstance(channel, discord.abc.Messageable):
+                await interaction.response.send_message(
+                    embed=self.embeds.message("Invalid Channel", "Selected channel cannot receive messages.", emoji="⚠️"),
+                    ephemeral=True,
+                )
+                return
+
+            # Get channel ID and name safely
+            self.selected_channel_id = channel.id
+            if hasattr(channel, 'name'):
+                self.selected_channel_name = channel.name
+            elif hasattr(channel, 'mention'):
+                # Fallback: try to get name from mention or use ID
+                self.selected_channel_name = channel.mention.replace('<#', '').replace('>', '')
+            else:
+                self.selected_channel_name = f"Channel {channel.id}"
+
+            # Show modal for board name and description
+            from .modals import CreateBoardModal
+            
+            modal = CreateBoardModal(
+                cog=None,  # Not needed since we're handling channel separately
+                db=self.db,
+                embeds=self.embeds,
+                channel_id=self.selected_channel_id,
+                channel_name=self.selected_channel_name,
             )
-            return
-
-        self.selected_channel_id = channel.id
-        self.selected_channel_name = channel.name
-
-        # Show modal for board name and description
-        from .modals import CreateBoardModal
-        
-        modal = CreateBoardModal(
-            cog=None,  # Not needed since we're handling channel separately
-            db=self.db,
-            embeds=self.embeds,
-            channel_id=self.selected_channel_id,
-            channel_name=self.selected_channel_name,
-        )
-        await interaction.response.send_modal(modal)
-        self.stop()
+            await interaction.response.send_modal(modal)
+            self.stop()
+        except Exception as e:
+            logger = logging.getLogger("distask.create_board")
+            logger.exception("Error in channel_select: %s", e)
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    embed=self.embeds.message(
+                        "Unexpected Error",
+                        "Something went wrong while processing your channel selection. Please try again.",
+                        emoji="🔥",
+                    ),
+                    ephemeral=True,
+                )
+            self.stop()
 
 
 class AddTaskFlowView(discord.ui.View):
