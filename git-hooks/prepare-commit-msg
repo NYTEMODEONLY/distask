@@ -1,0 +1,49 @@
+#!/bin/bash
+# Git prepare-commit-msg hook for DisTask
+# Auto-injects FR marker from branch name if missing
+
+COMMIT_MSG_FILE="$1"
+COMMIT_TYPE="$2"
+COMMIT_SHA="$3"
+
+# Only process regular commits (not merges, amends without -c, etc.)
+if [ "$COMMIT_TYPE" != "message" ] && [ "$COMMIT_TYPE" != "" ]; then
+    exit 0
+fi
+
+# Get current branch name
+BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+
+# Check if branch matches feature/<id>-* pattern
+if [[ "$BRANCH" =~ ^feature/([0-9]+)- ]]; then
+    FEATURE_ID="${BASH_REMATCH[1]}"
+    COMMIT_MSG=$(cat "$COMMIT_MSG_FILE")
+    
+    # Check if commit message already contains FR marker
+    if ! echo "$COMMIT_MSG" | grep -qiE "(FR-${FEATURE_ID}|feature-request[^0-9]*${FEATURE_ID}|feature[/_-]${FEATURE_ID})"; then
+        # Check if message starts with a comment (commented out)
+        if echo "$COMMIT_MSG" | head -1 | grep -qE "^#"; then
+            exit 0
+        fi
+        
+        # Auto-inject FR marker at the end of the first line (subject)
+        FIRST_LINE=$(echo "$COMMIT_MSG" | head -1)
+        REMAINING_LINES=$(echo "$COMMIT_MSG" | tail -n +2)
+        
+        # Add FR marker to subject line
+        if [ -n "$REMAINING_LINES" ]; then
+            NEW_MSG="${FIRST_LINE} FR-${FEATURE_ID}"$'\n'"${REMAINING_LINES}"
+        else
+            NEW_MSG="${FIRST_LINE} FR-${FEATURE_ID}"
+        fi
+        
+        echo "$NEW_MSG" > "$COMMIT_MSG_FILE"
+        
+        echo ""
+        echo "✨ Auto-added FR-${FEATURE_ID} to commit message"
+        echo ""
+    fi
+fi
+
+exit 0
+

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import List
 
@@ -16,6 +17,7 @@ class AdminCog(commands.Cog):
         self.bot = bot
         self.db = db
         self.embeds = embeds
+        self.logger = logging.getLogger("distask.admin")
 
     async def board_autocomplete(self, interaction: discord.Interaction, current: str) -> List[app_commands.Choice[str]]:
         if not interaction.guild_id:
@@ -220,6 +222,77 @@ class AdminCog(commands.Cog):
         modal = ReminderTimeModal(db=self.db, embeds=self.embeds)
         await interaction.response.send_modal(modal)
 
+    @app_commands.command(name="mark-feature-completed", description="Manually mark a feature request as completed (admin only)")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.checks.cooldown(1, 10.0)
+    @app_commands.describe(feature_id="The feature request ID to mark as completed", commit_hash="Optional: commit hash that completed this feature")
+    async def mark_feature_completed(
+        self,
+        interaction: discord.Interaction,
+        feature_id: int,
+        commit_hash: str | None = None,
+    ) -> None:
+        if not interaction.guild_id:
+            await interaction.response.send_message(
+                embed=self.embeds.message("Guild Only", "Run this inside a server.", emoji="⚠️"),
+            )
+            return
+
+        # Check if feature request exists
+        try:
+            feature = await self.db.get_feature_request(feature_id)
+            if not feature:
+                await interaction.response.send_message(
+                    embed=self.embeds.message(
+                        "Not Found",
+                        f"Feature request #{feature_id} does not exist.",
+                        emoji="❌",
+                    ),
+                )
+                return
+
+            # Check if already completed
+            if feature.get("status") == "completed":
+                await interaction.response.send_message(
+                    embed=self.embeds.message(
+                        "Already Completed",
+                        f"Feature request #{feature_id} is already marked as completed.",
+                        emoji="✅",
+                    ),
+                )
+                return
+
+            # Mark as completed
+            commit_message = f"Manually marked completed via /mark-feature-completed by {interaction.user.display_name}"
+            if commit_hash:
+                commit_message = f"{commit_message} (commit: {commit_hash})"
+
+            await self.db.mark_feature_completed(
+                feature_id,
+                commit_hash=commit_hash,
+                commit_message=commit_message,
+            )
+
+            await interaction.response.send_message(
+                embed=self.embeds.message(
+                    "Feature Marked Completed",
+                    f"Feature request **#{feature_id}** has been marked as completed.\n\n"
+                    f"**Title:** {feature.get('title', 'N/A')}\n"
+                    f"**Status:** completed\n"
+                    + (f"**Commit:** `{commit_hash}`\n" if commit_hash else ""),
+                    emoji="✅",
+                ),
+            )
+        except Exception as exc:
+            self.logger.exception("Failed to mark feature completed: %s", exc)
+            await interaction.response.send_message(
+                embed=self.embeds.message(
+                    "Error",
+                    f"Failed to mark feature request #{feature_id} as completed: {exc}",
+                    emoji="🔥",
+                ),
+            )
+
     @app_commands.command(name="distask-help", description="Show help for DisTask")
     @app_commands.checks.cooldown(1, 3.0)
     async def distask_help(self, interaction: discord.Interaction) -> None:
@@ -266,7 +339,8 @@ class AdminCog(commands.Cog):
             "`/add-column` - Add a column to a board\n"
             "`/remove-column` - Remove a column (must be empty)\n"
             "`/toggle-notifications` - Enable or disable due reminders for this server\n"
-            "`/set-reminder` - Set the daily reminder time (UTC)"
+            "`/set-reminder` - Set the daily reminder time (UTC)\n"
+            "`/mark-feature-completed` - Manually mark a feature request as completed"
         )
         embed.add_field(
             name="⚙️ Admin",

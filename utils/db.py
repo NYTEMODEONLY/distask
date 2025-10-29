@@ -525,6 +525,14 @@ class Database:
         )
         return [dict(row) for row in rows or []]
 
+    async def get_feature_request(self, feature_id: int) -> Optional[Dict[str, Any]]:
+        row = await self._execute(
+            "SELECT * FROM feature_requests WHERE id = $1",
+            (feature_id,),
+            fetchone=True,
+        )
+        return dict(row) if row else None
+
     async def set_feature_request_message(
         self,
         feature_id: int,

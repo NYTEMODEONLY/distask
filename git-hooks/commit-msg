@@ -1,0 +1,42 @@
+#!/bin/bash
+# Git commit-msg hook for DisTask
+# Validates that feature branch commits include FR marker
+
+COMMIT_MSG_FILE="$1"
+COMMIT_MSG=$(cat "$COMMIT_MSG_FILE")
+
+# Get current branch name
+BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+
+# Check if branch matches feature/<id>-* pattern
+if [[ "$BRANCH" =~ ^feature/([0-9]+)- ]]; then
+    FEATURE_ID="${BASH_REMATCH[1]}"
+    
+    # Check if commit message contains FR marker
+    if ! echo "$COMMIT_MSG" | grep -qiE "(FR-${FEATURE_ID}|feature-request[^0-9]*${FEATURE_ID}|feature[/_-]${FEATURE_ID})"; then
+        echo ""
+        echo "⚠️  WARNING: Branch '${BRANCH}' suggests feature request #${FEATURE_ID},"
+        echo "   but commit message doesn't include FR marker (FR-${FEATURE_ID})."
+        echo ""
+        echo "   Include 'FR-${FEATURE_ID}' in your commit message so the automation"
+        echo "   can mark the feature request as completed."
+        echo ""
+        echo "   Example: 'feat: add modal export FR-${FEATURE_ID}'"
+        echo ""
+        # Non-blocking: allow commit to proceed
+    else
+        # Validate that FR ID matches branch number
+        if echo "$COMMIT_MSG" | grep -qiE "FR-([0-9]+)"; then
+            MSG_FR_ID=$(echo "$COMMIT_MSG" | grep -oiE "FR-([0-9]+)" | grep -oiE "[0-9]+" | head -1)
+            if [ "$MSG_FR_ID" != "$FEATURE_ID" ]; then
+                echo ""
+                echo "⚠️  WARNING: Branch suggests FR #${FEATURE_ID}, but commit mentions FR #${MSG_FR_ID}."
+                echo "   Ensure the FR ID matches your branch."
+                echo ""
+            fi
+        fi
+    fi
+fi
+
+exit 0
+
