@@ -232,11 +232,11 @@ class AdminCog(commands.Cog):
         
         # Boards section
         boards_commands = (
-            "`/create-board`\n"
-            "`/list-boards`\n"
-            "`/view-board`\n"
-            "`/delete-board`\n"
-            "`/board-stats`"
+            "`/create-board` - Create a new task board\n"
+            "`/list-boards` - List all boards in this server\n"
+            "`/view-board` - View a board's configuration\n"
+            "`/delete-board` - Delete a board and all its tasks\n"
+            "`/board-stats` - Show quick stats for a board"
         )
         embed.add_field(
             name="📋 Boards",
@@ -246,14 +246,14 @@ class AdminCog(commands.Cog):
         
         # Tasks section
         tasks_commands = (
-            "`/add-task`\n"
-            "`/list-tasks`\n"
-            "`/move-task`\n"
-            "`/assign-task`\n"
-            "`/edit-task`\n"
-            "`/complete-task`\n"
-            "`/delete-task`\n"
-            "`/search-task`"
+            "`/add-task` - Create a new task on a board\n"
+            "`/list-tasks` - List tasks on a board\n"
+            "`/move-task` - Move a task to another column\n"
+            "`/assign-task` - Assign a task to a member\n"
+            "`/edit-task` - Update details for a task\n"
+            "`/complete-task` - Mark a task complete/incomplete\n"
+            "`/delete-task` - Remove a task\n"
+            "`/search-task` - Full-text search across tasks"
         )
         embed.add_field(
             name="📝 Tasks",
@@ -263,14 +263,24 @@ class AdminCog(commands.Cog):
         
         # Admin section
         admin_commands = (
-            "`/add-column`\n"
-            "`/remove-column`\n"
-            "`/toggle-notifications`\n"
-            "`/set-reminder`"
+            "`/add-column` - Add a column to a board\n"
+            "`/remove-column` - Remove a column (must be empty)\n"
+            "`/toggle-notifications` - Enable or disable due reminders for this server\n"
+            "`/set-reminder` - Set the daily reminder time (UTC)"
         )
         embed.add_field(
             name="⚙️ Admin",
             value=admin_commands,
+            inline=False,
+        )
+        
+        # Features section
+        features_commands = (
+            "`/request-feature` - Suggest a new feature for DisTask"
+        )
+        embed.add_field(
+            name="✨ Features",
+            value=features_commands,
             inline=False,
         )
         
