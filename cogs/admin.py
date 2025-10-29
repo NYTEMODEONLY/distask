@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import List
 
 import discord
@@ -222,16 +223,62 @@ class AdminCog(commands.Cog):
     @app_commands.command(name="distask-help", description="Show help for DisTask")
     @app_commands.checks.cooldown(1, 3.0)
     async def distask_help(self, interaction: discord.Interaction) -> None:
-        message = (
-            "**DisTask Command Groups**\n"
-            "• Boards: /create-board, /list-boards, /view-board, /delete-board, /board-stats\n"
-            "• Tasks: /add-task, /list-tasks, /move-task, /assign-task, /edit-task, /complete-task, /delete-task, /search-task\n"
-            "• Admin: /add-column, /remove-column, /toggle-notifications, /set-reminder\n\n"
-            "Need more? Check the README bundled with the bot."
+        # Create a rich embed with sections
+        embed = discord.Embed(
+            title="📚 Command Guide",
+            description="DisTask Command Groups",
+            color=discord.Color.from_rgb(118, 75, 162),  # Default blue-purple
         )
-        await interaction.response.send_message(
-            embed=self.embeds.message("Command Guide", message, emoji="📚"),
+        
+        # Boards section
+        boards_commands = (
+            "`/create-board`\n"
+            "`/list-boards`\n"
+            "`/view-board`\n"
+            "`/delete-board`\n"
+            "`/board-stats`"
         )
+        embed.add_field(
+            name="📋 Boards",
+            value=boards_commands,
+            inline=False,
+        )
+        
+        # Tasks section
+        tasks_commands = (
+            "`/add-task`\n"
+            "`/list-tasks`\n"
+            "`/move-task`\n"
+            "`/assign-task`\n"
+            "`/edit-task`\n"
+            "`/complete-task`\n"
+            "`/delete-task`\n"
+            "`/search-task`"
+        )
+        embed.add_field(
+            name="📝 Tasks",
+            value=tasks_commands,
+            inline=False,
+        )
+        
+        # Admin section
+        admin_commands = (
+            "`/add-column`\n"
+            "`/remove-column`\n"
+            "`/toggle-notifications`\n"
+            "`/set-reminder`"
+        )
+        embed.add_field(
+            name="⚙️ Admin",
+            value=admin_commands,
+            inline=False,
+        )
+        
+        # Footer note
+        embed.set_footer(text="Need more? Check the README bundled with the bot. • distask.xyz")
+        embed.timestamp = datetime.now(timezone.utc)
+        
+        await interaction.response.send_message(embed=embed)
 
     async def _resolve_board(self, interaction: discord.Interaction, board_value: str):
         if not interaction.guild_id:
