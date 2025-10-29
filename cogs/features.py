@@ -166,11 +166,11 @@ class FeaturesCog(commands.Cog):
             "Feature Request Logged",
             (
                 "Thank you! Your feature request has been logged and will be reviewed for prioritization.\n\n"
-                f"You can view all requests at {GITHUB_LINK}"
+                f"🔗 View all requests: {GITHUB_LINK}"
             ),
             emoji="✨",
         )
-        embed.add_field(name="Request ID", value=str(request_id), inline=False)
+        embed.add_field(name="📋 Request ID", value=f"**#{request_id}**", inline=False)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
         await self._announce_to_community(
@@ -207,18 +207,54 @@ class FeaturesCog(commands.Cog):
     ) -> None:
         if not self.community_webhook_url or not self.community_channel_id:
             return
+        # Build enhanced title with emoji
+        title_text = f"✨ Feature Request #{feature_id}: {title}"
+        
+        # Build description with suggestion
+        description = suggestion or "—"
+        
         embed = discord.Embed(
-            title=f"Feature #{feature_id}: {title}",
-            description=suggestion or "—",
+            title=title_text,
+            description=description,
             color=discord.Color.blurple(),
         )
+        
+        # Add metadata line
         guild_name = guild.name if guild else "Unknown Server"
-        embed.add_field(name="Requested By", value=f"<@{requester.id}>", inline=True)
-        embed.add_field(name="Origin Server", value=guild_name, inline=True)
+        metadata_parts = [
+            f"👤 <@{requester.id}>",
+            f"🏠 {guild_name}",
+        ]
         if suggested_priority:
-            embed.add_field(name="Suggested Priority", value=suggested_priority, inline=True)
-        embed.add_field(name="Public Backlog", value=GITHUB_LINK, inline=False)
-        embed.set_footer(text="Vote with 👍 / 👎 / 🔁 to influence priority and duplicate detection.")
+            priority_emoji = "🔴" if suggested_priority.lower() == "high" else "🟡" if suggested_priority.lower() == "medium" else "🟢"
+            metadata_parts.append(f"{priority_emoji} {suggested_priority.capitalize()}")
+        
+        embed.description += "\n\n" + " • ".join(metadata_parts)
+        
+        # Add fields with emoji indicators
+        embed.add_field(
+            name="👤 Requested By",
+            value=f"<@{requester.id}>",
+            inline=True,
+        )
+        embed.add_field(
+            name="🏠 Origin Server",
+            value=guild_name,
+            inline=True,
+        )
+        if suggested_priority:
+            priority_emoji = "🔴" if suggested_priority.lower() == "high" else "🟡" if suggested_priority.lower() == "medium" else "🟢"
+            embed.add_field(
+                name="📊 Suggested Priority",
+                value=f"{priority_emoji} {suggested_priority.capitalize()}",
+                inline=True,
+            )
+        embed.add_field(
+            name="🔗 Public Backlog",
+            value=f"[View on GitHub]({GITHUB_LINK})",
+            inline=False,
+        )
+        embed.set_footer(text="👍 / 👎 / 🔁 Vote to influence priority and duplicate detection.")
 
         message_id: Optional[int] = None
         try:
