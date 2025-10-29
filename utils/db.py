@@ -525,13 +525,28 @@ class Database:
         )
         return [dict(row) for row in rows or []]
 
-    async def get_feature_request(self, feature_id: int) -> Optional[Dict[str, Any]]:
-        row = await self._execute(
-            "SELECT * FROM feature_requests WHERE id = $1",
-            (feature_id,),
-            fetchone=True,
-        )
+    async def get_feature_request(self, feature_id: int, *, guild_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+        if guild_id is not None:
+            row = await self._execute(
+                "SELECT * FROM feature_requests WHERE id = $1 AND guild_id = $2",
+                (feature_id, guild_id),
+                fetchone=True,
+            )
+        else:
+            row = await self._execute(
+                "SELECT * FROM feature_requests WHERE id = $1",
+                (feature_id,),
+                fetchone=True,
+            )
         return dict(row) if row else None
+
+    async def fetch_feature_requests_by_guild(self, guild_id: int) -> List[Dict[str, Any]]:
+        rows = await self._execute(
+            "SELECT * FROM feature_requests WHERE guild_id = $1 ORDER BY created_at DESC",
+            (guild_id,),
+            fetchall=True,
+        )
+        return [dict(row) for row in rows or []]
 
     async def set_feature_request_message(
         self,
