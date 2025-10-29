@@ -238,14 +238,14 @@ class AdminCog(commands.Cog):
             )
             return
 
-        # Check if feature request exists
+        # Check if feature request exists (scoped to current guild)
         try:
-            feature = await self.db.get_feature_request(feature_id)
+            feature = await self.db.get_feature_request(feature_id, guild_id=interaction.guild_id)
             if not feature:
                 await interaction.response.send_message(
                     embed=self.embeds.message(
                         "Not Found",
-                        f"Feature request #{feature_id} does not exist.",
+                        f"Feature request #{feature_id} does not exist in this server.",
                         emoji="❌",
                     ),
                 )
