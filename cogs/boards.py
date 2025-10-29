@@ -203,15 +203,54 @@ class BoardsCog(commands.Cog):
         async def on_board_selected(inter: discord.Interaction, board_id: int, board: dict) -> None:
             await inter.response.defer(thinking=True)
             stats = await self.db.board_stats(board_id)
+            
+            # Calculate health-based color
+            total = stats.get("total", 0)
+            overdue = stats.get("overdue", 0)
+            completed = stats.get("completed", 0)
+            active = total - completed
+            
+            # Determine color
+            if total == 0:
+                color = discord.Color.from_rgb(118, 75, 162)  # Default blue-purple
+            elif overdue == 0:
+                color = discord.Color.from_rgb(46, 204, 113)  # Green - healthy
+            elif overdue <= 5:
+                color = discord.Color.from_rgb(243, 156, 18)  # Yellow - some overdue
+            elif overdue <= 10:
+                color = discord.Color.from_rgb(230, 126, 34)  # Orange - multiple overdue
+            else:
+                color = discord.Color.from_rgb(231, 76, 60)  # Red - critical
+            
+            # Build enhanced description with visual indicators
+            description_parts = [f"📋 **{board['name']}** · #{board_id}"]
+            
+            # Stats with emojis
+            stats_parts = []
+            if total > 0:
+                stats_parts.append(f"📊 **{total}** total")
+            if completed > 0:
+                stats_parts.append(f"✅ **{completed}** completed")
+            if active > 0:
+                stats_parts.append(f"⏳ **{active}** active")
+            if overdue > 0:
+                stats_parts.append(f"🔴 **{overdue}** overdue")
+            
+            if stats_parts:
+                description_parts.append("\n" + "  •  ".join(stats_parts))
+            
+            # Add progress bar if there are tasks
+            if total > 0:
+                from utils.embeds import _create_progress_bar
+                percentage = int((completed / total) * 100)
+                progress_bar = _create_progress_bar(completed, total, length=16)
+                description_parts.append(f"\n\n{progress_bar} {percentage}% complete")
+            
             embed = self.embeds.message(
                 "Board Pulse",
-                (
-                    f"**{board['name']}**\n"
-                    f"• Total: {stats['total']}\n"
-                    f"• Complete: {stats['completed']}\n"
-                    f"• Overdue: {stats['overdue']}"
-                ),
+                "\n".join(description_parts),
                 emoji="📊",
+                color=color,
             )
             await inter.followup.send(embed=embed)
 
