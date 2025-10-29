@@ -335,24 +335,35 @@ class FeaturesCog(commands.Cog):
             return
 
         try:
+            guild_id = interaction.guild_id
+            if guild_id is None:
+                await interaction.response.send_message(
+                    embed=self.embeds.message(
+                        "Guild Only",
+                        "Please run /check-duplicates inside a Discord server.",
+                        emoji="🏠",
+                    ),
+                )
+                return
+
             if feature_id:
                 # Check duplicates for specific feature
-                feature = await self.db.get_feature_request(feature_id)
+                feature = await self.db.get_feature_request(feature_id, guild_id=guild_id)
                 if not feature:
                     await interaction.response.send_message(
                         embed=self.embeds.message(
                             "Not Found",
-                            f"Feature request #{feature_id} does not exist.",
+                            f"Feature request #{feature_id} does not exist in this server.",
                             emoji="❌",
                         ),
                     )
                     return
 
-                duplicates = await self._find_duplicates_for_feature(feature_id)
+                duplicates = await self._find_duplicates_for_feature(feature_id, guild_id)
                 embed = self._build_duplicate_embed(feature, duplicates)
             else:
-                # List all duplicates
-                all_duplicates = await self._find_all_duplicates()
+                # List all duplicates for this guild
+                all_duplicates = await self._find_all_duplicates(guild_id)
                 embed = self._build_all_duplicates_embed(all_duplicates)
 
             await interaction.response.send_message(embed=embed)
@@ -367,18 +378,19 @@ class FeaturesCog(commands.Cog):
                 ),
             )
 
-    async def _find_duplicates_for_feature(self, feature_id: int) -> List[dict]:
-        """Find duplicates for a specific feature request."""
-        feature = await self.db.get_feature_request(feature_id)
+    async def _find_duplicates_for_feature(self, feature_id: int, guild_id: int) -> List[dict]:
+        """Find duplicates for a specific feature request, scoped to the current guild."""
+        feature = await self.db.get_feature_request(feature_id, guild_id=guild_id)
         if not feature:
             return []
 
-        all_features = await self.db.fetch_feature_requests()
+        # Only fetch features from the same guild
+        all_features = await self.db.fetch_feature_requests_by_guild(guild_id)
         duplicates: List[dict] = []
 
-        # Check if marked as duplicate
+        # Check if marked as duplicate (only if parent is in same guild)
         if feature.get("duplicate_of"):
-            parent = await self.db.get_feature_request(feature["duplicate_of"])
+            parent = await self.db.get_feature_request(feature["duplicate_of"], guild_id=guild_id)
             if parent:
                 duplicates.append({
                     "id": parent["id"],
@@ -387,14 +399,14 @@ class FeaturesCog(commands.Cog):
                     "confidence": None,
                 })
 
-        # Check analysis_data for similar candidates
+        # Check analysis_data for similar candidates (only from same guild)
         analysis_data = feature.get("analysis_data")
         if analysis_data:
             if isinstance(analysis_data, str):
                 analysis_data = json.loads(analysis_data)
             similar_ids = analysis_data.get("similar_candidates", [])
             for similar_id in similar_ids:
-                similar_feature = await self.db.get_feature_request(similar_id)
+                similar_feature = await self.db.get_feature_request(similar_id, guild_id=guild_id)
                 if similar_feature:
                     duplicates.append({
                         "id": similar_id,
@@ -403,7 +415,7 @@ class FeaturesCog(commands.Cog):
                         "confidence": None,
                     })
 
-        # Find other features that are duplicates of this one
+        # Find other features that are duplicates of this one (within same guild)
         for other_feature in all_features:
             if other_feature["id"] == feature_id:
                 continue
@@ -417,22 +429,25 @@ class FeaturesCog(commands.Cog):
 
         return duplicates
 
-    async def _find_all_duplicates(self) -> List[dict]:
-        """Find all feature requests marked as duplicates."""
-        all_features = await self.db.fetch_feature_requests()
+    async def _find_all_duplicates(self, guild_id: int) -> List[dict]:
+        """Find all feature requests marked as duplicates, scoped to the current guild."""
+        # Only fetch features from the same guild
+        all_features = await self.db.fetch_feature_requests_by_guild(guild_id)
         duplicates: List[dict] = []
 
         for feature in all_features:
             if feature.get("duplicate_of"):
                 parent_id = feature["duplicate_of"]
-                parent = await self.db.get_feature_request(parent_id)
-                duplicates.append({
-                    "duplicate_id": feature["id"],
-                    "duplicate_title": feature.get("title", "Unknown"),
-                    "parent_id": parent_id,
-                    "parent_title": parent.get("title", "Unknown") if parent else "Unknown",
-                    "status": feature.get("status", "pending"),
-                })
+                # Only include if parent is also in the same guild
+                parent = await self.db.get_feature_request(parent_id, guild_id=guild_id)
+                if parent:
+                    duplicates.append({
+                        "duplicate_id": feature["id"],
+                        "duplicate_title": feature.get("title", "Unknown"),
+                        "parent_id": parent_id,
+                        "parent_title": parent.get("title", "Unknown"),
+                        "status": feature.get("status", "pending"),
+                    })
 
         return duplicates
 
