@@ -52,12 +52,20 @@
 - Record manual checks (e.g., `/create-board`, `/add-task`) in PRs and reference `logs/distask.log` output.
 
 ## Commit & Pull Request Guidelines
+
+**PR-First Approach:** Always create a Pull Request before implementing feature requests to get code review. See [Feature Request Workflow Guide](docs/FEATURE_REQUEST_WORKFLOW.md) for complete details.
+
 - Follow existing history: imperative subjects with optional scopes (`feat:`, `web:`), e.g., `feat: tighten reminders`.
-- Reference feature requests in implementation commits using `FR-<id>` (for example `FR-123`) so the automation can mark them completed automatically.
+- **Create PR first** on branch `feature/<id>-short-slug` before implementing
+- **Install git hooks** (`./scripts/setup-git-hooks.sh`) to auto-inject FR markers from branch names
+- Reference feature requests in implementation commits and PR titles using `FR-<id>` (for example `FR-123`) so the automation can mark them completed automatically.
+- Automation scans both **merged PRs** (title + description) and **commits** for FR markers
 - Missing the reference leaves the request `pending`; the automation will revert any manual status edits the next time it exports `feature_requests.md`.
 - Keep unrelated changes in separate commits and ship schema updates with the cogs that use them.
 - PRs should include a summary, testing notes, linked issue or Discord thread, and visuals for embed/UI tweaks.
 - Highlight permission changes or new env vars in the PR title or checklist.
+
+**See also:** [docs/FEATURE_REQUEST_WORKFLOW.md](docs/FEATURE_REQUEST_WORKFLOW.md) for the complete workflow guide.
 
 ## Security & Configuration Tips
 - Copy `.env.example` to `.env`, store secrets outside git, and point systemd units at that file. Populate `github_token`/`repo_owner`/`repo_name` so `/request-feature` exports succeed and the automation can publish updates.
