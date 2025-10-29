@@ -1,0 +1,14 @@
+[Unit]
+Description=DisTask GitHub Sync (Fallback Polling)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/distask
+EnvironmentFile=%h/distask/.env
+ExecStart=%h/distask/.venv/bin/python %h/distask/scripts/git_sync.py --poll
+
+[Install]
+WantedBy=multi-user.target
+

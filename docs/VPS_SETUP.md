@@ -359,6 +359,273 @@ sudo systemctl start distask-feature-agent.service
 sudo systemctl list-timers distask-feature-agent.timer
 ```
 
+## Automated GitHub Sync via Webhooks
+
+DisTask can automatically sync code changes from GitHub and restart services instantly when you push commits, similar to Vercel's deployment model.
+
+### How It Works
+
+- **Primary Method**: GitHub webhook sends instant push notifications to your VPS
+- **Fallback Method**: Systemd timer polls every 2 minutes (only runs if webhook hasn't fired recently)
+- **Auto-restart**: Services restart automatically after successful git pull
+
+### Step 1: Configure Environment Variables
+
+Add these to your `.env` file:
+
+```bash
+# Required for webhook signature verification
+GITHUB_WEBHOOK_SECRET=your_random_secret_here
+
+# Optional: Configure which branch to monitor (default: main)
+GIT_SYNC_BRANCH=main
+
+# Optional: Enable/disable sync (default: true)
+GIT_SYNC_ENABLED=true
+```
+
+**Generate a secure webhook secret:**
+```bash
+# Generate a random 32-character secret
+openssl rand -hex 16
+```
+
+### Step 2: Set Up GitHub Webhook
+
+1. Go to your GitHub repository: `https://github.com/NYTEMODEONLY/distask/settings/hooks`
+2. Click **"Add webhook"**
+3. Configure:
+   - **Payload URL**: `https://distask.xyz/webhooks/github` (or your domain)
+   - **Content type**: `application/json`
+   - **Secret**: Paste the secret you generated (same as `GITHUB_WEBHOOK_SECRET`)
+   - **Events**: Select **"Just the push event"**
+   - **Active**: Checked
+   - **SSL verification**: Enabled
+4. Click **"Add webhook"**
+
+GitHub will send a test payload. Check your webhook logs to verify it's working.
+
+### Step 3: Install Systemd Service Files (Fallback Polling)
+
+Copy the service and timer files:
+
+```bash
+cd /root/distask
+sudo cp distask-git-sync.service /etc/systemd/system/
+sudo cp distask-git-sync.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+```
+
+**Note:** Update paths in `distask-git-sync.service` if your repo is not at `/root/distask`:
+- `WorkingDirectory`: Change to your actual repo path
+- `EnvironmentFile`: Change to your actual `.env` file path
+- `ExecStart`: Update Python path if using a different venv location
+
+### Step 4: Enable Fallback Timer (Optional)
+
+The timer is a safety net that ensures updates even if webhook fails:
+
+```bash
+sudo systemctl enable distask-git-sync.timer
+sudo systemctl start distask-git-sync.timer
+```
+
+Verify timer is active:
+```bash
+sudo systemctl status distask-git-sync.timer
+```
+
+Expected output:
+- `Active: active (waiting)` - Timer is scheduled
+- `Trigger: ...` - Next run time (every 2 minutes)
+
+### Step 5: Test the Setup
+
+**Test webhook (instant sync):**
+1. Make a small change to any file in your repo
+2. Commit and push to GitHub:
+   ```bash
+   git commit -m "test: verify webhook sync"
+   git push origin main
+   ```
+3. Check webhook logs:
+   ```bash
+   sudo journalctl -u distask-web.service -f
+   ```
+4. Check sync script logs:
+   ```bash
+   sudo journalctl -u distask-git-sync.service -n 50
+   ```
+5. Verify services restarted:
+   ```bash
+   sudo systemctl status distask.service distask-web.service
+   ```
+
+**Test fallback polling:**
+```bash
+# Manually trigger the sync script
+sudo systemctl start distask-git-sync.service
+
+# Check logs
+sudo journalctl -u distask-git-sync.service -n 50
+```
+
+### Step 6: Verify Sync is Working
+
+Check last sync timestamp:
+```bash
+cat /root/distask/data/last_sync.json
+```
+
+Should show:
+```json
+{
+  "last_sync": "2025-01-XXTXX:XX:XX.XXXXXX+00:00"
+}
+```
+
+### Troubleshooting
+
+#### Webhook Not Triggering
+
+**Check webhook endpoint is accessible:**
+```bash
+curl -X POST https://distask.xyz/webhooks/github \
+  -H "Content-Type: application/json" \
+  -H "X-GitHub-Event: push" \
+  -d '{"ref":"refs/heads/main"}'
+```
+
+Should return `401 Unauthorized` (expected - missing signature) or `503 Service Unavailable` (webhook secret not configured).
+
+**Check webhook secret matches:**
+```bash
+grep GITHUB_WEBHOOK_SECRET /root/distask/.env
+```
+
+Must match the secret configured in GitHub webhook settings.
+
+**Check webhook delivery logs in GitHub:**
+1. Go to repository Settings → Webhooks
+2. Click on your webhook
+3. View "Recent Deliveries" tab
+4. Check if requests are being sent and what responses they receive
+
+#### Sync Script Failing
+
+**Check for dirty working tree:**
+```bash
+cd /root/distask
+git status
+```
+
+If there are uncommitted changes, sync will skip. Commit or stash changes first.
+
+**Check git configuration:**
+```bash
+cd /root/distask
+git remote -v
+git branch -a
+```
+
+Ensure `origin` remote points to GitHub and branch exists.
+
+**Test sync script manually:**
+```bash
+cd /root/distask
+source .venv/bin/activate
+python scripts/git_sync.py --dry-run
+```
+
+Should show what would happen without actually pulling.
+
+**Check sync script logs:**
+```bash
+sudo journalctl -u distask-git-sync.service -n 100
+```
+
+#### Services Not Restarting
+
+**Verify service names match:**
+```bash
+systemctl list-units | grep distask
+```
+
+Ensure `distask.service` and `distask-web.service` exist.
+
+**Check service restart logs:**
+```bash
+sudo journalctl -u distask.service --since "5 minutes ago"
+sudo journalctl -u distask-web.service --since "5 minutes ago"
+```
+
+**Manually restart services:**
+```bash
+sudo systemctl restart distask.service distask-web.service
+```
+
+#### Polling Skipping Syncs
+
+The fallback timer skips if sync happened < 5 minutes ago (to avoid duplicate syncs when webhook fires). This is expected behavior.
+
+To force a sync:
+```bash
+sudo systemctl start distask-git-sync.service
+```
+
+Or disable the skip check by modifying `scripts/git_sync.py` threshold.
+
+### Configuration Options
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GITHUB_WEBHOOK_SECRET` | (required) | Secret token for webhook signature verification |
+| `GIT_SYNC_BRANCH` | `main` | Branch to monitor for updates |
+| `GIT_SYNC_ENABLED` | `true` | Enable/disable sync functionality |
+| `REPO_OWNER` | `NYTEMODEONLY` | GitHub repository owner |
+| `REPO_NAME` | `distask` | GitHub repository name |
+
+### Manual Sync
+
+Run sync manually anytime:
+```bash
+cd /root/distask
+source .venv/bin/activate
+python scripts/git_sync.py
+```
+
+Dry-run mode (check without pulling):
+```bash
+python scripts/git_sync.py --dry-run
+```
+
+### Disable Sync
+
+Temporarily disable:
+```bash
+# Disable webhook (edit .env)
+echo "GIT_SYNC_ENABLED=false" >> /root/distask/.env
+sudo systemctl restart distask-web.service
+
+# Disable fallback timer
+sudo systemctl stop distask-git-sync.timer
+sudo systemctl disable distask-git-sync.timer
+```
+
+Re-enable:
+```bash
+# Remove or set to true in .env
+sudo systemctl restart distask-web.service
+sudo systemctl enable --now distask-git-sync.timer
+```
+
+### Security Notes
+
+- **Webhook signature verification**: All webhook requests are verified using HMAC SHA256. Invalid signatures are rejected with 401.
+- **Branch filtering**: Only pushes to the configured branch trigger syncs.
+- **Clean working tree**: Sync skips if there are uncommitted changes (prevents data loss).
+- **Service isolation**: Sync script runs with same user/permissions as the services.
+
 ## Related Documentation
 
 - [Feature Request Workflow](FEATURE_REQUEST_WORKFLOW.md) - Development workflow guide
