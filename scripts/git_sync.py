@@ -159,7 +159,7 @@ def pull_changes(branch: str) -> bool:
         return False
     except subprocess.CalledProcessError as e:
         # Check for merge conflicts
-        error_output = e.stderr.decode() if e.stderr else str(e)
+        error_output = e.stderr.decode() if e.stderr and isinstance(e.stderr, bytes) else str(e.stderr) if e.stderr else str(e)
         if "CONFLICT" in error_output or "conflict" in error_output.lower():
             logger.error("Merge conflict detected. Manual intervention required.")
         else:
