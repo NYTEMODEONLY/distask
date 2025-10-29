@@ -1,5 +1,6 @@
 | ID | User ID | Guild ID | Title | Suggestion | Suggested Priority | Status | Priority | Ease | Score | Upvotes | Downvotes | Duplicate Votes | Duplicate Of | Last Analyzed | Created At | Completed At |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 15 | 536648724244332544 | 1432217453370413118 | Add rewards for completing a task | Please add a way to add rewards for the completion of a task | high | pending | - | - | - | 0 | 0 | 0 | - | - | 2025-10-29 12:05:50 UTC | - |
 | 14 | 536648724244332544 | 1432217453370413118 | Tip the creator | There be a command or link that can be clicked on to a venmo/cashapp/etc for tipping the creator of the bot | Highest | pending | - | - | - | 0 | 0 | 0 | - | - | 2025-10-29 11:57:16 UTC | - |
 | 13 | 536648724244332544 | 1432217453370413118 | Version and release notes | I would like to easily see the version number of the bot, and release notes with new features and bug fixes | - | pending | - | - | - | 0 | 0 | 0 | - | - | 2025-10-29 11:37:06 UTC | - |
 | 12 | 536648724244332544 | 1432217453370413118 | Due date | When creating a task and entering a due date it asks for a long date format. I would like some presets like “Today” “Tomorrow” “3 Days” “6 Days” “7 Days” | - | pending | - | - | 10 | 0 | 0 | 0 | - | 2025-10-29 08:30:02 UTC | 2025-10-28 13:04:49 UTC | - |
