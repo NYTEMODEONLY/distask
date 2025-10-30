@@ -39,6 +39,8 @@ distask/
 ├── LICENSE              # MIT
 ├── scripts/             # Operational tooling & automation
 │   ├── feature_agent.py # Duplicate detection, scoring, git integration
+│   ├── release_helper.py # Rapid release flow: score-based releases, validation
+│   ├── validate.py      # Pre-commit validation (linting, tests, schema)
 │   └── migrate_sqlite_to_postgres.py  # One-time migration helper
 └── README.md            # You are here
 ```
@@ -137,6 +139,32 @@ Quick reference:
 - Post-merge, automation runs nightly at 03:30 CST via `distask-feature-agent.timer`; manually trigger with `sudo systemctl start distask-feature-agent.service`
 
 **See also:** [docs/FEATURE_REQUEST_WORKFLOW.md](docs/FEATURE_REQUEST_WORKFLOW.md) for the complete workflow guide.
+
+### Rapid Release Flow
+
+DisTask includes a score-based rapid release system for streamlined shipping. See [Release Flow Guide](docs/RELEASE_FLOW.md) for complete details.
+
+**Quick start:**
+```bash
+# Suggest release batch
+python scripts/release_helper.py --suggest --threshold 80
+
+# Validate everything
+python scripts/release_helper.py --validate
+
+# Full release cycle (dry-run first)
+python scripts/release_helper.py --full-cycle --dry-run --threshold 80
+python scripts/release_helper.py --full-cycle --yes --auto-select --threshold 80
+```
+
+**Features:**
+- Score-based feature selection from `automation/feature_queue.json`
+- Comprehensive pre-commit validation (linting, tests, schema checks)
+- Automated versioning, changelog generation, and GitHub releases
+- Integration with PR-first workflow
+- AI/IDE prompt templates for feature implementation
+
+**See also:** [docs/RELEASE_FLOW.md](docs/RELEASE_FLOW.md) for the complete release guide.
 
 ### Installing the Timer on a Fresh Host
 

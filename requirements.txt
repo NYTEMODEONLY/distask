@@ -5,3 +5,10 @@ python-dateutil>=2.8
 fastapi>=0.115
 uvicorn>=0.30
 aiohttp>=3.9
+
+# Development/Validation tools (optional, for release_helper.py)
+black>=23.0
+flake8>=6.0
+mypy>=1.0
+pytest>=7.0
+pytest-asyncio>=0.21

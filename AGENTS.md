@@ -5,6 +5,8 @@
 - `cogs/` contains slash-command groups (`boards.py`, `tasks.py`, `admin.py`, `features.py`); register new cogs in `bot.py`.
 - `utils/` centralizes async helpers (PostgreSQL wrapper, embeds, validators, reminders, GitHub exports) for reuse across cogs.
 - `scripts/feature_agent.py` runs the feature-request automation (dedupe, scoring, git sync); schedule it in CI or cron as needed.
+- `scripts/release_helper.py` provides rapid release flow (score-based selection, validation, versioning, GitHub releases).
+- `scripts/validate.py` handles pre-commit validation (linting, tests, schema checks).
 - `web/app.py` hosts the FastAPI landing page and `/status` endpoint used by `distask.service`.
 - `data/` and `logs/` are runtime outputs (archives/backups, rotating logs); keep them out of commits.
 
