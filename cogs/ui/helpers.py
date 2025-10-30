@@ -96,6 +96,7 @@ async def get_task_choices(db, board_id: int, user_id: int, is_admin: bool, max_
     """
     Fetch tasks for a board and return as SelectOption list.
     If not admin, only returns tasks created by the user.
+    If user_id is 0 and is_admin is True, shows all tasks (for completion flow).
     """
     tasks = await db.fetch_tasks(board_id)
     options = []
@@ -103,7 +104,11 @@ async def get_task_choices(db, board_id: int, user_id: int, is_admin: bool, max_
     
     for task in tasks:
         # Filter: only show tasks created by user, unless admin
-        if not is_admin and task.get("created_by") != user_id:
+        # Special case: if user_id is 0 and is_admin is True, show all (for complete-task)
+        if user_id == 0 and is_admin:
+            # Show all tasks
+            pass
+        elif not is_admin and task.get("created_by") != user_id:
             continue
         
         # Format task display

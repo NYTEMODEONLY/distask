@@ -265,46 +265,40 @@ class TasksCog(commands.Cog):
     @app_commands.command(name="complete-task", description="Mark a task complete/incomplete")
     @app_commands.checks.cooldown(1, 3.0)
     async def complete_task(self, interaction: discord.Interaction) -> None:
-        from .ui import TaskIDInputModal, TaskActionsView
+        from .ui import CompleteTaskFlowView
+        from .ui.helpers import get_board_choices
 
         if not interaction.guild_id:
             await interaction.response.send_message(
                 embed=self.embeds.message("Guild Only", "This command must be used in a guild.", emoji="⚠️"),
             )
             return
-
-        async def on_task_validated(inter: discord.Interaction, task_id: int) -> None:
-            # Verify task belongs to this guild
-            task = await self.db.fetch_task(task_id)
-            if not task:
-                await inter.response.send_message(
-                    embed=self.embeds.message("Task Not Found", f"Task #{task_id} does not exist.", emoji="⚠️"),
-                )
-                return
-
-            board = await self.db.get_board(inter.guild_id, task["board_id"])
-            if not board:
-                await inter.response.send_message(
-                    embed=self.embeds.message("Task Not Found", "Task not part of this guild.", emoji="⚠️"),
-                )
-                return
-
-            # Show task actions view
-            view = TaskActionsView(
-                task_id=task_id,
-                task=task,
-                db=self.db,
-                embeds=self.embeds,
+        
+        # Get board options
+        board_options = await get_board_choices(self.db, interaction.guild_id)
+        if not board_options:
+            await interaction.response.send_message(
+                embed=self.embeds.message("No Boards", "There are no boards in this server.", emoji="⚠️"),
+                ephemeral=True,
             )
-            task_embed = self.embeds.task_detail(task, task.get("column_name", "Unknown"))
-            await inter.response.send_message(embed=task_embed, view=view)
-
-        modal = TaskIDInputModal(
-            title="Complete Task",
-            on_submit_callback=on_task_validated,
+            return
+        
+        view = CompleteTaskFlowView(
+            guild_id=interaction.guild_id,
+            db=self.db,
             embeds=self.embeds,
+            initial_board_options=board_options,
         )
-        await interaction.response.send_modal(modal)
+        
+        await interaction.response.send_message(
+            embed=self.embeds.message(
+                "Complete Task",
+                "Select a board, then choose a task to mark complete or incomplete.",
+                emoji="✅",
+            ),
+            view=view,
+            ephemeral=True,
+        )
 
     @app_commands.command(name="delete-task", description="Remove a task")
     @app_commands.checks.cooldown(1, 3.0)
