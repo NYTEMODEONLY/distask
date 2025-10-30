@@ -229,6 +229,9 @@ class AddTaskFlowView(discord.ui.View):
 
         # Set initial board options
         self.board_select.options = initial_board_options
+        
+        # Initialize column_select with empty options (required for disabled selects)
+        self.column_select.options = []
 
     @discord.ui.select(placeholder="1. Select a board...", min_values=1, max_values=1, row=0)
     async def board_select(self, interaction: discord.Interaction, select: discord.ui.Select) -> None:
