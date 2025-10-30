@@ -222,66 +222,45 @@ class TasksCog(commands.Cog):
     @app_commands.command(name="edit-task", description="Update details for a task")
     @app_commands.checks.cooldown(1, 10.0)
     async def edit_task(self, interaction: discord.Interaction) -> None:
-        from .ui import TaskIDInputModal, EditTaskModal
+        from .ui import EditTaskFlowView
+        from .ui.helpers import get_board_choices
 
         if not interaction.guild_id:
             await interaction.response.send_message(
                 embed=self.embeds.message("Guild Only", "This command must be used in a guild.", emoji="⚠️"),
             )
             return
-
-        async def on_task_validated(inter: discord.Interaction, task_id: int) -> None:
-            # Verify task belongs to this guild
-            task = await self.db.fetch_task(task_id)
-            if not task:
-                await inter.response.send_message(
-                    embed=self.embeds.message("Task Not Found", f"Task #{task_id} does not exist.", emoji="⚠️"),
-                )
-                return
-
-            board = await self.db.get_board(inter.guild_id, task["board_id"])
-            if not board:
-                await inter.response.send_message(
-                    embed=self.embeds.message("Task Not Found", "Task not part of this guild.", emoji="⚠️"),
-                )
-                return
-
-            # Cannot send modal after modal - Discord limitation
-            # Create a button that opens the edit modal
-            from .ui.views import EditTaskButtonView
-            
-            view = EditTaskButtonView(
-                task_id=task_id,
-                task=task,
-                db=self.db,
-                embeds=self.embeds,
-            )
-            
-            # Format due date for display if it exists
-            due_date_display = ""
-            if task.get("due_date"):
-                from utils.embeds import _format_time
-                try:
-                    due_date_display = f"\n⏰ Due: {_format_time(task['due_date'])}"
-                except Exception:
-                    pass
-            
-            await inter.response.send_message(
-                embed=self.embeds.message(
-                    "Edit Task",
-                    f"Task #{task_id}: **{task.get('title', 'Untitled')}**{due_date_display}\n\nClick the button below to edit:",
-                    emoji="✏️",
-                ),
-                view=view,
+        
+        # Check if user is admin (has Manage Guild permission)
+        is_admin = interaction.user.guild_permissions.manage_guild if interaction.user else False
+        
+        # Get board options
+        board_options = await get_board_choices(self.db, interaction.guild_id)
+        if not board_options:
+            await interaction.response.send_message(
+                embed=self.embeds.message("No Boards", "There are no boards in this server.", emoji="⚠️"),
                 ephemeral=True,
             )
-
-        modal = TaskIDInputModal(
-            title="Edit Task",
-            on_submit_callback=on_task_validated,
+            return
+        
+        view = EditTaskFlowView(
+            guild_id=interaction.guild_id,
+            user_id=interaction.user.id,
+            is_admin=is_admin,
+            db=self.db,
             embeds=self.embeds,
+            initial_board_options=board_options,
         )
-        await interaction.response.send_modal(modal)
+        
+        await interaction.response.send_message(
+            embed=self.embeds.message(
+                "Edit Task",
+                "Select a board, then choose a task to edit.\n\nYou can only edit tasks you created, unless you're a server admin.",
+                emoji="✏️",
+            ),
+            view=view,
+            ephemeral=True,
+        )
 
     @app_commands.command(name="complete-task", description="Mark a task complete/incomplete")
     @app_commands.checks.cooldown(1, 3.0)

@@ -8,7 +8,7 @@ import discord
 if TYPE_CHECKING:
     from utils import Database, EmbedFactory
 
-from .helpers import get_board_choices, get_column_choices
+from .helpers import get_board_choices, get_column_choices, get_task_choices
 from .modals import (
     AddColumnModal,
     AddTaskModal,
@@ -532,8 +532,187 @@ class AddTaskFlowView(discord.ui.View):
         self.stop()
 
 
+class EditTaskFlowView(discord.ui.View):
+    """View for the /edit-task flow: board selector → task selector → edit modal.
+    
+    Shows one step at a time with back/cancel buttons.
+    Only shows tasks created by the user (or all tasks if admin).
+    """
+    
+    def __init__(
+        self,
+        *,
+        guild_id: int,
+        user_id: int,
+        is_admin: bool,
+        db: "Database",
+        embeds: "EmbedFactory",
+        initial_board_options: list,
+        timeout: float = 300.0,
+    ) -> None:
+        super().__init__(timeout=timeout)
+        self.guild_id = guild_id
+        self.user_id = user_id
+        self.is_admin = is_admin
+        self.db = db
+        self.embeds = embeds
+        self.selected_board_id: Optional[int] = None
+        self.selected_board_name: Optional[str] = None
+        self.selected_task_id: Optional[int] = None
+        self.selected_task: Optional[dict] = None
+        self.current_step: int = 1  # 1=board, 2=task
+        
+        # Set initial board options
+        self.board_select.options = initial_board_options
+        
+        # Create task_select manually (Discord requires at least one option even when disabled)
+        task_select = discord.ui.Select(
+            placeholder="Select a board first...",
+            min_values=1,
+            max_values=1,
+            disabled=True,
+            row=1,
+            options=[discord.SelectOption(label="(Select board first)", value="__placeholder__", default=False)]
+        )
+        task_select.callback = self.task_select_callback
+        self.add_item(task_select)
+        self.task_select = task_select
+    
+    @discord.ui.select(placeholder="1. Select a board...", min_values=1, max_values=1, row=0)
+    async def board_select(self, interaction: discord.Interaction, select: discord.ui.Select) -> None:
+        board_id = int(select.values[0])
+        board = await self.db.get_board(self.guild_id, board_id)
+        if not board:
+            await interaction.response.send_message(
+                embed=self.embeds.message("Board Not Found", "That board no longer exists.", emoji="⚠️"),
+                ephemeral=True,
+            )
+            self.stop()
+            return
+        
+        self.selected_board_id = board_id
+        self.selected_board_name = board["name"]
+        self.current_step = 2
+        
+        # Load task options (filtered by creator unless admin)
+        task_options = await get_task_choices(self.db, board_id, self.user_id, self.is_admin)
+        if not task_options:
+            filter_msg = "that you created" if not self.is_admin else ""
+            await interaction.response.send_message(
+                embed=self.embeds.message(
+                    "No Tasks Found",
+                    f"This board has no tasks{filter_msg} that you can edit.",
+                    emoji="⚠️",
+                ),
+                ephemeral=True,
+            )
+            self.stop()
+            return
+        
+        # Show only task select, hide board select
+        self.board_select.disabled = True
+        self.task_select.options = task_options
+        self.task_select.disabled = False
+        self.task_select.placeholder = "2. Select a task to edit..."
+        if hasattr(self, 'back_button'):
+            self.back_button.disabled = False
+        
+        await interaction.response.edit_message(
+            embed=self.embeds.message(
+                "Edit Task",
+                f"Board: **{board['name']}**\n\nSelect a task to edit.",
+                emoji="✏️",
+            ),
+            view=self,
+        )
+    
+    async def task_select_callback(self, interaction: discord.Interaction) -> None:
+        # Discord.py passes only interaction when callback is manually set
+        # Get values from interaction data
+        if not interaction.data or "values" not in interaction.data:
+            return
+        
+        values = interaction.data.get("values", [])
+        if not values or values[0] == "__placeholder__":
+            return
+        
+        task_id = int(values[0])
+        task = await self.db.fetch_task(task_id)
+        if not task:
+            await interaction.response.send_message(
+                embed=self.embeds.message("Task Not Found", "That task no longer exists.", emoji="⚠️"),
+                ephemeral=True,
+            )
+            self.stop()
+            return
+        
+        # Verify task belongs to selected board
+        if task.get("board_id") != self.selected_board_id:
+            await interaction.response.send_message(
+                embed=self.embeds.message("Invalid Task", "Task doesn't belong to selected board.", emoji="⚠️"),
+                ephemeral=True,
+            )
+            self.stop()
+            return
+        
+        # Verify permissions: user created it OR is admin
+        if not self.is_admin and task.get("created_by") != self.user_id:
+            await interaction.response.send_message(
+                embed=self.embeds.message(
+                    "Permission Denied",
+                    "You can only edit tasks that you created. Server admins can edit any task.",
+                    emoji="🚫",
+                ),
+                ephemeral=True,
+            )
+            self.stop()
+            return
+        
+        self.selected_task_id = task_id
+        self.selected_task = task
+        
+        # Show edit modal
+        from .modals import EditTaskModal
+        
+        edit_modal = EditTaskModal(
+            task_id=task_id,
+            task=task,
+            db=self.db,
+            embeds=self.embeds,
+        )
+        await interaction.response.send_modal(edit_modal)
+        self.stop()
+    
+    @discord.ui.button(label="◀ Back", style=discord.ButtonStyle.secondary, disabled=True, row=2)
+    async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        if self.current_step == 2:
+            # Go back to board selection
+            self.current_step = 1
+            self.selected_board_id = None
+            self.selected_board_name = None
+            self.selected_task_id = None
+            self.selected_task = None
+            self.board_select.disabled = False
+            self.task_select.disabled = True
+            self.task_select.placeholder = "Select a board first..."
+            self.back_button.disabled = True
+            
+            await interaction.response.edit_message(
+                embed=self.embeds.message("Edit Task", "Select a board to edit a task:", emoji="✏️"),
+                view=self,
+            )
+    
+    @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.danger, row=2)
+    async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        await interaction.response.edit_message(
+            embed=self.embeds.message("Cancelled", "Task editing cancelled.", emoji="❌"),
+            view=None,
+        )
+        self.stop()
+
+
 class EditTaskButtonView(discord.ui.View):
-    """View with a button to open the edit task modal."""
+    """View with a button to open the edit task modal (legacy - kept for compatibility)."""
     
     def __init__(
         self,
