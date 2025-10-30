@@ -90,3 +90,36 @@ async def get_column_choices(db, board_id: int) -> list[discord.SelectOption]:
             )
         )
     return options
+
+
+async def get_task_choices(db, board_id: int, user_id: int, is_admin: bool, max_choices: int = 25) -> list[discord.SelectOption]:
+    """
+    Fetch tasks for a board and return as SelectOption list.
+    If not admin, only returns tasks created by the user.
+    """
+    tasks = await db.fetch_tasks(board_id)
+    options = []
+    count = 0
+    
+    for task in tasks:
+        # Filter: only show tasks created by user, unless admin
+        if not is_admin and task.get("created_by") != user_id:
+            continue
+        
+        # Format task display
+        title = truncate_text(task.get("title", "Untitled"), 80)
+        task_id = task.get("id", 0)
+        completed_marker = "✅ " if task.get("completed") else ""
+        
+        options.append(
+            discord.SelectOption(
+                label=f"{completed_marker}#{task_id}: {title}",
+                value=str(task_id),
+                description=truncate_text(task.get("description") or "", 100),
+            )
+        )
+        count += 1
+        if count >= max_choices:
+            break
+    
+    return options
