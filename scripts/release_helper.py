@@ -184,6 +184,52 @@ def suggest_release_batch(
     return candidates
 
 
+async def show_completed_features(db: Optional[Database] = None, limit: int = 10) -> None:
+    """Show recently completed features."""
+    print("\n" + "=" * 70)
+    print("RECENTLY COMPLETED FEATURES")
+    print("=" * 70)
+    
+    completed: List[Dict] = []
+    
+    if db:
+        try:
+            rows = await db.fetch_feature_requests()
+            for row in rows:
+                if row.get("status") == "completed":
+                    completed.append(row)
+            # Sort by completed_at descending
+            completed.sort(
+                key=lambda x: x.get("completed_at") or "",
+                reverse=True,
+            )
+        except Exception as e:
+            logger.error("Error loading completed features from DB: %s", e)
+    
+    if not completed:
+        print("No completed features found.")
+        print("=" * 70 + "\n")
+        return
+    
+    for idx, feature in enumerate(completed[:limit], 1):
+        feature_id = feature.get("id")
+        title = feature.get("title", "Unknown")
+        completed_at = feature.get("completed_at", "")
+        analysis = feature.get("analysis_data", {})
+        commit_hash = analysis.get("commit_hash", "") if isinstance(analysis, dict) else ""
+        commit_message = analysis.get("commit_message", "") if isinstance(analysis, dict) else ""
+        
+        print(f"\n{idx}. FR-{feature_id}: {title}")
+        if completed_at:
+            print(f"   Completed: {completed_at}")
+        if commit_hash:
+            print(f"   Commit: {commit_hash[:8]} - {commit_message[:60]}")
+    
+    print("\n" + "=" * 70)
+    print(f"Total: {len(completed)} completed feature(s)")
+    print("=" * 70 + "\n")
+
+
 def print_release_suggestion(candidates: List[ReleaseCandidate], threshold: float) -> None:
     """Print formatted release suggestion."""
     print("\n" + "=" * 70)
@@ -485,6 +531,11 @@ async def main() -> int:
         "--full-cycle",
         action="store_true",
         help="Execute full release cycle",
+    )
+    parser.add_argument(
+        "--show-completed",
+        action="store_true",
+        help="Show recently completed features",
     )
     parser.add_argument(
         "--threshold",
