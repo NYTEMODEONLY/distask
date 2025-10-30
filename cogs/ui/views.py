@@ -246,11 +246,6 @@ class AddTaskFlowView(discord.ui.View):
         column_select.callback = self.column_select_callback
         self.add_item(column_select)
         self.column_select = column_select
-        
-        # Initially hide column and due date selects, disable buttons
-        self.due_date_preset_select.disabled = True
-        self.continue_button.disabled = True
-        self.back_button.disabled = True
 
     @discord.ui.select(placeholder="1. Select a board...", min_values=1, max_values=1, row=0)
     async def board_select(self, interaction: discord.Interaction, select: discord.ui.Select) -> None:
@@ -283,9 +278,12 @@ class AddTaskFlowView(discord.ui.View):
         self.column_select.options = column_options
         self.column_select.disabled = False
         self.column_select.placeholder = "2. Select a column..."
-        self.due_date_preset_select.disabled = True
-        self.continue_button.disabled = True
-        self.back_button.disabled = False
+        if hasattr(self, 'due_date_preset_select'):
+            self.due_date_preset_select.disabled = True
+        if hasattr(self, 'continue_button'):
+            self.continue_button.disabled = True
+        if hasattr(self, 'back_button'):
+            self.back_button.disabled = False
 
         await interaction.response.edit_message(
             embed=self.embeds.message(
@@ -323,9 +321,12 @@ class AddTaskFlowView(discord.ui.View):
         # Show only due date select, hide column select
         self.board_select.disabled = True
         self.column_select.disabled = True
-        self.due_date_preset_select.disabled = False
-        self.continue_button.disabled = False
-        self.back_button.disabled = False
+        if hasattr(self, 'due_date_preset_select'):
+            self.due_date_preset_select.disabled = False
+        if hasattr(self, 'continue_button'):
+            self.continue_button.disabled = False
+        if hasattr(self, 'back_button'):
+            self.back_button.disabled = False
 
         await interaction.response.edit_message(
             embed=self.embeds.message(
