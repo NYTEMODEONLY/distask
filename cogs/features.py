@@ -172,7 +172,7 @@ class FeaturesCog(commands.Cog):
             emoji="✨",
         )
         embed.add_field(name="📋 Request ID", value=f"**#{request_id}**", inline=False)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message(embed=embed)
 
         await self._announce_to_community(
             feature_id=request_id,
