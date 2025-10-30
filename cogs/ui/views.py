@@ -419,7 +419,7 @@ class AddTaskFlowView(discord.ui.View):
             view=self,
         )
 
-    @discord.ui.button(label="◀ Back", style=discord.ButtonStyle.secondary, disabled=True, row=3)
+    @discord.ui.button(label="◀ Back", style=discord.ButtonStyle.secondary, disabled=True, row=4)
     async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         if self.current_step == 2:
             # Go back to board selection
@@ -484,7 +484,7 @@ class AddTaskFlowView(discord.ui.View):
                 view=self,
             )
 
-    @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.danger, row=3)
+    @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.danger, row=4)
     async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await interaction.response.edit_message(
             embed=self.embeds.message("Cancelled", "Task creation cancelled.", emoji="❌"),
