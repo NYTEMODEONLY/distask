@@ -206,7 +206,10 @@ class CreateBoardFlowView(discord.ui.View):
 
 
 class AddTaskFlowView(discord.ui.View):
-    """View for the /add-task flow: board selector → column selector → modal."""
+    """View for the /add-task flow: board selector → column selector → modal.
+    
+    Shows one step at a time with back/cancel buttons.
+    """
 
     def __init__(
         self,
@@ -226,13 +229,14 @@ class AddTaskFlowView(discord.ui.View):
         self.selected_column_id: Optional[int] = None
         self.selected_column_name: Optional[str] = None
         self.selected_due_date_preset: Optional[str] = None
+        self.current_step: int = 1  # 1=board, 2=column, 3=due_date, 4=ready
 
         # Set initial board options
         self.board_select.options = initial_board_options
         
-        # Create column_select manually (can't use decorator with empty options when disabled)
+        # Create column_select manually (Discord requires at least one option even when disabled)
         column_select = discord.ui.Select(
-            placeholder="2. Select a column...",
+            placeholder="Select a board first...",
             min_values=1,
             max_values=1,
             disabled=True,
@@ -242,6 +246,11 @@ class AddTaskFlowView(discord.ui.View):
         column_select.callback = self.column_select_callback
         self.add_item(column_select)
         self.column_select = column_select
+        
+        # Initially hide column and due date selects, disable buttons
+        self.due_date_preset_select.disabled = True
+        self.continue_button.disabled = True
+        self.back_button.disabled = True
 
     @discord.ui.select(placeholder="1. Select a board...", min_values=1, max_values=1, row=0)
     async def board_select(self, interaction: discord.Interaction, select: discord.ui.Select) -> None:
@@ -250,57 +259,80 @@ class AddTaskFlowView(discord.ui.View):
         if not board:
             await interaction.response.send_message(
                 embed=self.embeds.message("Board Not Found", "That board no longer exists.", emoji="⚠️"),
+                ephemeral=True,
             )
             self.stop()
             return
 
         self.selected_board_id = board_id
         self.selected_board_name = board["name"]
+        self.current_step = 2
 
         # Load column options
         column_options = await get_column_choices(self.db, board_id)
         if not column_options:
             await interaction.response.send_message(
                 embed=self.embeds.message("No Columns", "This board has no columns.", emoji="⚠️"),
+                ephemeral=True,
             )
             self.stop()
             return
 
+        # Show only column select, hide board select
+        self.board_select.disabled = True
         self.column_select.options = column_options
         self.column_select.disabled = False
-        self.due_date_preset_select.disabled = False
-        self.continue_button.disabled = False
+        self.column_select.placeholder = "2. Select a column..."
+        self.due_date_preset_select.disabled = True
+        self.continue_button.disabled = True
+        self.back_button.disabled = False
 
         await interaction.response.edit_message(
             embed=self.embeds.message(
                 "Add Task",
-                f"Board: **{board['name']}**\n\nNow select a column and optionally choose a due date preset, then click Continue.",
+                f"Board: **{board['name']}**\n\nNow select a column.",
                 emoji="➕",
             ),
             view=self,
         )
 
-    async def column_select_callback(self, interaction: discord.Interaction, select: discord.ui.Select) -> None:
-        # Ignore placeholder option
-        if not select.values or select.values[0] == "__placeholder__":
+    async def column_select_callback(self, interaction: discord.Interaction) -> None:
+        # Discord.py passes only interaction when callback is manually set
+        # Get the select component from the view
+        select_component = None
+        for item in self.children:
+            if isinstance(item, discord.ui.Select) and item.row == 1:
+                select_component = item
+                break
+        
+        if not select_component or not select_component.values or select_component.values[0] == "__placeholder__":
             return
         
-        column_name = select.values[0]
+        column_name = select_component.values[0]
         column = await self.db.get_column_by_name(self.selected_board_id, column_name)
         if not column:
             await interaction.response.send_message(
                 embed=self.embeds.message("Column Not Found", "That column no longer exists.", emoji="⚠️"),
+                ephemeral=True,
             )
             self.stop()
             return
 
         self.selected_column_id = column["id"]
         self.selected_column_name = column["name"]
+        self.current_step = 3
+
+        # Show only due date select, hide column select
+        self.board_select.disabled = True
+        self.column_select.disabled = True
+        self.due_date_preset_select.disabled = False
+        self.continue_button.disabled = False
+        self.back_button.disabled = False
 
         await interaction.response.edit_message(
             embed=self.embeds.message(
                 "Add Task",
-                f"Board: **{self.selected_board_name}**\nColumn: **{column_name}**\n\nOptionally choose a due date preset, then click Continue to open the task form.",
+                f"Board: **{self.selected_board_name}**\nColumn: **{column_name}**\n\nOptionally choose a due date preset, then click Continue.",
                 emoji="➕",
             ),
             view=self,
@@ -336,11 +368,58 @@ class AddTaskFlowView(discord.ui.View):
             view=self,
         )
 
-    @discord.ui.button(label="Continue", style=discord.ButtonStyle.primary, disabled=True, row=3)
+    @discord.ui.button(label="◀ Back", style=discord.ButtonStyle.secondary, disabled=True, row=3)
+    async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        if self.current_step == 2:
+            # Go back to board selection
+            self.current_step = 1
+            self.selected_board_id = None
+            self.selected_board_name = None
+            self.board_select.disabled = False
+            self.column_select.disabled = True
+            self.column_select.placeholder = "Select a board first..."
+            self.due_date_preset_select.disabled = True
+            self.continue_button.disabled = True
+            self.back_button.disabled = True
+            
+            await interaction.response.edit_message(
+                embed=self.embeds.message("Add Task", "Select a board to add a task:", emoji="➕"),
+                view=self,
+            )
+        elif self.current_step == 3:
+            # Go back to column selection
+            self.current_step = 2
+            self.selected_column_id = None
+            self.selected_column_name = None
+            self.board_select.disabled = True
+            self.column_select.disabled = False
+            self.due_date_preset_select.disabled = True
+            self.continue_button.disabled = True
+            self.back_button.disabled = False
+            
+            await interaction.response.edit_message(
+                embed=self.embeds.message(
+                    "Add Task",
+                    f"Board: **{self.selected_board_name}**\n\nNow select a column.",
+                    emoji="➕",
+                ),
+                view=self,
+            )
+
+    @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.danger, row=3)
+    async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        await interaction.response.edit_message(
+            embed=self.embeds.message("Cancelled", "Task creation cancelled.", emoji="❌"),
+            view=None,
+        )
+        self.stop()
+
+    @discord.ui.button(label="Continue", style=discord.ButtonStyle.primary, disabled=True, row=4)
     async def continue_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         if not self.selected_board_id or not self.selected_column_id:
             await interaction.response.send_message(
                 embed=self.embeds.message("Selection Required", "Please select both board and column first.", emoji="⚠️"),
+                ephemeral=True,
             )
             return
 
