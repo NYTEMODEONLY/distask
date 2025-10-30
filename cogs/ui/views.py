@@ -257,7 +257,10 @@ class AddTaskFlowView(discord.ui.View):
             disabled=True,
             row=2,
         )
-        user_select.callback = self.user_select_callback
+        # Create wrapper callback that matches UserSelect signature
+        async def user_select_callback_wrapper(interaction: discord.Interaction, select: discord.ui.UserSelect) -> None:
+            await self.user_select_callback(interaction, select)
+        user_select.callback = user_select_callback_wrapper
         self.add_item(user_select)
         self.user_select = user_select
 
@@ -352,45 +355,17 @@ class AddTaskFlowView(discord.ui.View):
             view=self,
         )
 
-    async def user_select_callback(self, interaction: discord.Interaction) -> None:
-        # Discord.py passes only interaction when callback is manually set
-        # Get values from interaction data
-        if not interaction.data or "values" not in interaction.data:
-            # User deselected (min_values=0 allows this)
-            self.selected_assignee_id = None
-            self.selected_assignee_name = None
-            self.current_step = 4
-            
-            # Show due date select
-            self.board_select.disabled = True
-            self.column_select.disabled = True
-            self.user_select.disabled = True
-            if hasattr(self, 'due_date_preset_select'):
-                self.due_date_preset_select.disabled = False
-            if hasattr(self, 'continue_button'):
-                self.continue_button.disabled = False
-            
-            await interaction.response.edit_message(
-                embed=self.embeds.message(
-                    "Add Task",
-                    f"Board: **{self.selected_board_name}**\nColumn: **{self.selected_column_name}**\n\nOptionally choose a due date preset, then click Continue.",
-                    emoji="➕",
-                ),
-                view=self,
-            )
-            return
-        
-        values = interaction.data.get("values", [])
-        if not values:
-            # No user selected
+    async def user_select_callback(self, interaction: discord.Interaction, select: discord.ui.UserSelect) -> None:
+        # UserSelect callback receives both interaction and select component
+        # Get selected user from select.values (UserSelect returns User objects)
+        if not select.values:
+            # No user selected (min_values=0 allows this)
             self.selected_assignee_id = None
             self.selected_assignee_name = None
         else:
-            user_id = int(values[0])
-            self.selected_assignee_id = user_id
-            # Try to get user from guild
-            user = interaction.guild.get_member(user_id) if interaction.guild else None
-            self.selected_assignee_name = user.display_name if user else f"User {user_id}"
+            user = select.values[0]  # UserSelect returns User objects
+            self.selected_assignee_id = user.id
+            self.selected_assignee_name = user.display_name
         
         self.current_step = 4
         
