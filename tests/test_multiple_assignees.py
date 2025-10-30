@@ -1,7 +1,9 @@
 """
 Test suite for FR-17: Multiple Assignees feature.
 
-Run with: pytest tests/test_multiple_assignees.py -v
+Run all tests: pytest tests/test_multiple_assignees.py -v
+Run unit tests only (default, skips integration): pytest tests/test_multiple_assignees.py -v
+Run integration tests: pytest -m integration tests/test_multiple_assignees.py -v
 """
 
 import pytest
