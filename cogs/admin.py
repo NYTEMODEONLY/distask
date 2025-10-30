@@ -361,7 +361,7 @@ class AdminCog(commands.Cog):
         # Community section
         embed.add_field(
             name="💬 Community",
-            value="[Join the official DisTask Discord](https://discord.gg/H5J4Bq2A2c) • Get support, share feedback, and stay updated!",
+            value="[Join the official DisTask Discord](https://discord.gg/C6nwuT2qpF) • Get support, share feedback, and stay updated!",
             inline=False,
         )
         
