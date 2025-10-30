@@ -256,6 +256,7 @@ class AddTaskModal(discord.ui.Modal):
         column_name: str,
         db: "Database",
         embeds: "EmbedFactory",
+        due_date_preset: Optional[str] = None,
     ) -> None:
         super().__init__(title=f"Add Task to {board_name}", timeout=300)
         self.board_id = board_id
@@ -288,7 +289,8 @@ class AddTaskModal(discord.ui.Modal):
         )
         self.due_date_input = discord.ui.TextInput(
             label="Due Date (optional)",
-            placeholder="YYYY-MM-DD HH:MM UTC",
+            placeholder="Today, Tomorrow, 3 Days, 6 Days, 7 Days, or YYYY-MM-DD HH:MM UTC",
+            default=due_date_preset or "",
             required=False,
             style=discord.TextStyle.short,
             max_length=50,
@@ -398,7 +400,7 @@ class EditTaskModal(discord.ui.Modal):
         )
         self.due_date_input = discord.ui.TextInput(
             label="Due Date (optional)",
-            placeholder="YYYY-MM-DD HH:MM UTC or empty to clear",
+            placeholder="Today, Tomorrow, 3 Days, 6 Days, 7 Days, or YYYY-MM-DD HH:MM UTC (empty to clear)",
             default=task.get("due_date") or "",
             required=False,
             style=discord.TextStyle.short,
