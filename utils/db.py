@@ -469,20 +469,28 @@ class Database:
     
     async def set_task_assignees(self, task_id: int, user_ids: List[int]) -> None:
         """Replace all assignees for a task with the given list."""
+        # Update legacy assignee_id FIRST to keep it in sync
+        # This ensures backwards compatibility even if add_task_assignees doesn't update it
+        if user_ids:
+            await self._execute(
+                "UPDATE tasks SET assignee_id = $1 WHERE id = $2",
+                (user_ids[0], task_id),
+            )
+        else:
+            await self._execute(
+                "UPDATE tasks SET assignee_id = NULL WHERE id = $1",
+                (task_id,),
+            )
+        
         # Remove all existing assignees
         await self._execute(
             "DELETE FROM task_assignees WHERE task_id = $1",
             (task_id,),
         )
+        
         # Add new assignees
         if user_ids:
             await self.add_task_assignees(task_id, user_ids)
-        else:
-            # Clear legacy assignee_id if no assignees
-            await self._execute(
-                "UPDATE tasks SET assignee_id = NULL WHERE id = $1",
-                (task_id,),
-            )
     
     async def get_task_assignees(self, task_id: int) -> List[int]:
         """Get list of user IDs assigned to a task."""
