@@ -577,4 +577,20 @@ def _get_head_commit() -> Optional[str]:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="DisTask Feature Agent - Automation for feature requests")
+    parser.add_argument(
+        "--release",
+        action="store_true",
+        help="Release mode: generate queue and exit (for release_helper.py integration)",
+    )
+    
+    args = parser.parse_args()
+    
+    if args.release:
+        # In release mode, just ensure queue is generated
+        # Main logic runs normally but can be called by release_helper
+        asyncio.run(main())
+    else:
+        asyncio.run(main())

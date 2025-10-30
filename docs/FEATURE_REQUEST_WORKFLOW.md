@@ -280,9 +280,39 @@ git push origin feature/123-short-slug
 journalctl -u distask-feature-agent.service --since "1 hour ago"
 ```
 
+## Rapid Release Integration
+
+After implementing features via PRs, use the rapid release flow to ship them:
+
+1. **Suggest Release Batch**: See what features are ready
+   ```bash
+   python scripts/release_helper.py --suggest --threshold 80
+   ```
+
+2. **Validate**: Ensure code quality before release
+   ```bash
+   python scripts/release_helper.py --validate
+   ```
+
+3. **Release**: Execute full release cycle
+   ```bash
+   python scripts/release_helper.py --full-cycle --yes --auto-select --threshold 80
+   ```
+
+The release helper:
+- Selects high-scoring features from the queue
+- Validates code quality (linting, tests, schema)
+- Bumps version, generates changelog
+- Creates GitHub release and git tags
+- Integrates seamlessly with PR-first workflow
+
+**See also:** [RELEASE_FLOW.md](RELEASE_FLOW.md) for complete release guide.
+
 ## Related Documentation
 
 - [README.md](../README.md) - General project overview
 - [CLAUDE.md](../CLAUDE.md) - Development guidelines
 - [AGENTS.md](../AGENTS.md) - Automation details
+- [RELEASE_FLOW.md](RELEASE_FLOW.md) - Rapid release flow guide
+- [release_prompt_templates.md](release_prompt_templates.md) - AI/IDE prompt templates
 
