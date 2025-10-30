@@ -1,5 +1,6 @@
 | ID | User ID | Guild ID | Title | Suggestion | Suggested Priority | Status | Priority | Ease | Score | Upvotes | Downvotes | Duplicate Votes | Duplicate Of | Last Analyzed | Created At | Completed At |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 16 | 536648724244332544 | 1432217453370413118 | recover deleted tasks | I deleted a task that shouldn’t have been deleted, I want to recover it | - | pending | - | - | - | 0 | 0 | 0 | - | - | 2025-10-30 03:53:42 UTC | - |
 | 15 | 536648724244332544 | 1432217453370413118 | Add rewards for completing a task | Please add a way to add rewards for the completion of a task | high | pending | - | - | 10 | 0 | 0 | 0 | - | 2025-10-30 00:23:12 UTC | 2025-10-29 12:05:50 UTC | - |
 | 14 | 536648724244332544 | 1432217453370413118 | Tip the creator | There be a command or link that can be clicked on to a venmo/cashapp/etc for tipping the creator of the bot | Highest | pending | - | - | 10 | 0 | 0 | 0 | - | 2025-10-30 00:23:12 UTC | 2025-10-29 11:57:16 UTC | - |
 | 13 | 536648724244332544 | 1432217453370413118 | Version and release notes | I would like to easily see the version number of the bot, and release notes with new features and bug fixes | - | pending | - | - | 10 | 0 | 0 | 0 | - | 2025-10-30 00:23:12 UTC | 2025-10-29 11:37:06 UTC | - |
