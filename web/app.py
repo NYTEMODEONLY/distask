@@ -171,18 +171,37 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             .cta-group { flex-direction: row; justify-content: center; }
         }
         .btn {
-            padding: 0.85rem 1.8rem;
+            padding: 0.7rem 1.4rem;
             border-radius: 999px;
             border: 1px solid transparent;
             text-decoration: none;
             font-weight: 600;
-            font-size: clamp(0.86rem, 2vw, 0.96rem);
+            font-size: clamp(0.8rem, 1.9vw, 0.9rem);
             display: inline-flex;
             align-items: center;
             gap: 0.5rem;
             justify-content: center;
             transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-            min-width: 204px;
+            min-width: 180px;
+        }
+        .github-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-muted);
+            margin-bottom: clamp(0.5rem, 1.5vh, 0.9rem);
+            transition: color 0.2s ease, transform 0.2s ease;
+        }
+        .github-link .icon {
+            width: 24px;
+            height: 24px;
+        }
+        .github-link:hover {
+            color: var(--text-primary);
+            transform: translateY(-2px);
+        }
+        .github-link:active {
+            transform: scale(0.95);
         }
         .btn-primary {
             background: linear-gradient(120deg, var(--gradient-start), var(--gradient-end));
@@ -408,14 +427,17 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
         <h1>DisTask</h1>
         <p class=\"lede\">Orchestrate disciplined Discord workflows with kanban clarity, slash-command speed, and reliable reminders that keep every guild project humming.</p>
+        <a href=\"https://github.com/NYTEMODEONLY/distask\" target=\"_blank\" rel=\"noopener\" class=\"github-link\" aria-label=\"View DisTask on GitHub\">
+            <i data-lucide=\"github\" class=\"icon\"></i>
+        </a>
         <div class=\"cta-group\">
             <a class=\"btn btn-primary\" href=\"{{INVITE_URL}}\" target=\"_blank\" rel=\"noopener\">
                 <i data-lucide=\"zap\" class=\"icon\"></i>
                 Deploy to Discord
             </a>
-            <a class=\"btn btn-secondary\" href=\"https://github.com/NYTEMODEONLY/distask\" target=\"_blank\" rel=\"noopener\">
-                <i data-lucide=\"book\" class=\"icon\"></i>
-                Explore Docs
+            <a class=\"btn btn-secondary\" href=\"https://discord.gg/C6nwuT2qpF\" target=\"_blank\" rel=\"noopener\">
+                <i data-lucide=\"users\" class=\"icon\"></i>
+                Join the Community
             </a>
         </div>
         <div class=\"pill-grid\">
