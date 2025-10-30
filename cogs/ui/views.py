@@ -267,7 +267,7 @@ class AddTaskFlowView(discord.ui.View):
             view=self,
         )
 
-    @discord.ui.select(placeholder="2. Select a column...", min_values=1, max_values=1, disabled=True, row=1)
+    @discord.ui.select(placeholder="2. Select a column...", min_values=1, max_values=1, disabled=True, row=1, options=[])
     async def column_select(self, interaction: discord.Interaction, select: discord.ui.Select) -> None:
         column_name = select.values[0]
         column = await self.db.get_column_by_name(self.selected_board_id, column_name)
