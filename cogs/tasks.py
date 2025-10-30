@@ -239,7 +239,6 @@ class TasksCog(commands.Cog):
         if not board_options:
             await interaction.response.send_message(
                 embed=self.embeds.message("No Boards", "There are no boards in this server.", emoji="⚠️"),
-                ephemeral=True,
             )
             return
         
@@ -259,7 +258,6 @@ class TasksCog(commands.Cog):
                 emoji="✏️",
             ),
             view=view,
-            ephemeral=True,
         )
 
     @app_commands.command(name="complete-task", description="Mark a task complete/incomplete")
@@ -279,7 +277,6 @@ class TasksCog(commands.Cog):
         if not board_options:
             await interaction.response.send_message(
                 embed=self.embeds.message("No Boards", "There are no boards in this server.", emoji="⚠️"),
-                ephemeral=True,
             )
             return
         
@@ -297,7 +294,6 @@ class TasksCog(commands.Cog):
                 emoji="✅",
             ),
             view=view,
-            ephemeral=True,
         )
 
     @app_commands.command(name="delete-task", description="Remove a task")

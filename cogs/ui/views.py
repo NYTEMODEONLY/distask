@@ -210,7 +210,6 @@ class CreateBoardFlowView(discord.ui.View):
                         "Something went wrong while processing your channel selection. Please try again.",
                         emoji="🔥",
                     ),
-                    ephemeral=True,
                 )
             self.stop()
 
