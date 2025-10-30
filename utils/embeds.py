@@ -21,14 +21,36 @@ def _format_time(value: Optional[str]) -> str:
 
 
 def _format_relative_time(iso_timestamp: Optional[str]) -> str:
-    """Format timestamp as relative time (e.g., '3 days ago')."""
+    """Format timestamp as relative time (e.g., '3 days ago' or 'in 3 days')."""
     if not iso_timestamp:
         return "Unknown"
     try:
         dt = datetime.fromisoformat(iso_timestamp.replace("Z", "+00:00"))
         now = datetime.now(timezone.utc)
         delta = now - dt
+        abs_delta = abs(delta)
 
+        # Handle future dates (negative delta)
+        if delta.total_seconds() < 0:
+            # Future date - use "in X time"
+            if abs_delta.days > 365:
+                years = abs_delta.days // 365
+                return f"in {years} year{'s' if years != 1 else ''}"
+            elif abs_delta.days > 30:
+                months = abs_delta.days // 30
+                return f"in {months} month{'s' if months != 1 else ''}"
+            elif abs_delta.days > 0:
+                return f"in {abs_delta.days} day{'s' if abs_delta.days != 1 else ''}"
+            elif abs_delta.seconds > 3600:
+                hours = abs_delta.seconds // 3600
+                return f"in {hours} hour{'s' if hours != 1 else ''}"
+            elif abs_delta.seconds > 60:
+                minutes = abs_delta.seconds // 60
+                return f"in {minutes} minute{'s' if minutes != 1 else ''}"
+            else:
+                return "soon"
+        
+        # Handle past dates (positive delta)
         if delta.days > 365:
             years = delta.days // 365
             return f"{years} year{'s' if years != 1 else ''} ago"
