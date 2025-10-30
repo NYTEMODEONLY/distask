@@ -864,9 +864,7 @@ class CompleteTaskFlowView(discord.ui.View):
         self.selected_task_id = task_id
         self.selected_task = task
         
-        # Show task actions view
-        from .views import TaskActionsView
-        
+        # Show task actions view with Complete/Incomplete/Delete buttons
         view = TaskActionsView(
             task_id=task_id,
             task=task,
