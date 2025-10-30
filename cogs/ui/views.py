@@ -287,7 +287,6 @@ class AddTaskFlowView(discord.ui.View):
         if not board:
             await interaction.response.send_message(
                 embed=self.embeds.message("Board Not Found", "That board no longer exists.", emoji="⚠️"),
-                ephemeral=True,
             )
             self.stop()
             return
@@ -301,7 +300,6 @@ class AddTaskFlowView(discord.ui.View):
         if not column_options:
             await interaction.response.send_message(
                 embed=self.embeds.message("No Columns", "This board has no columns.", emoji="⚠️"),
-                ephemeral=True,
             )
             self.stop()
             return
@@ -342,7 +340,6 @@ class AddTaskFlowView(discord.ui.View):
         if not column:
             await interaction.response.send_message(
                 embed=self.embeds.message("Column Not Found", "That column no longer exists.", emoji="⚠️"),
-                ephemeral=True,
             )
             self.stop()
             return
@@ -513,7 +510,6 @@ class AddTaskFlowView(discord.ui.View):
         if not self.selected_board_id or not self.selected_column_id:
             await interaction.response.send_message(
                 embed=self.embeds.message("Selection Required", "Please select both board and column first.", emoji="⚠️"),
-                ephemeral=True,
             )
             return
 
@@ -584,7 +580,6 @@ class EditTaskFlowView(discord.ui.View):
         if not board:
             await interaction.response.send_message(
                 embed=self.embeds.message("Board Not Found", "That board no longer exists.", emoji="⚠️"),
-                ephemeral=True,
             )
             self.stop()
             return
@@ -603,7 +598,6 @@ class EditTaskFlowView(discord.ui.View):
                     f"This board has no tasks{filter_msg} that you can edit.",
                     emoji="⚠️",
                 ),
-                ephemeral=True,
             )
             self.stop()
             return
@@ -640,7 +634,6 @@ class EditTaskFlowView(discord.ui.View):
         if not task:
             await interaction.response.send_message(
                 embed=self.embeds.message("Task Not Found", "That task no longer exists.", emoji="⚠️"),
-                ephemeral=True,
             )
             self.stop()
             return
@@ -649,7 +642,6 @@ class EditTaskFlowView(discord.ui.View):
         if task.get("board_id") != self.selected_board_id:
             await interaction.response.send_message(
                 embed=self.embeds.message("Invalid Task", "Task doesn't belong to selected board.", emoji="⚠️"),
-                ephemeral=True,
             )
             self.stop()
             return
@@ -662,7 +654,6 @@ class EditTaskFlowView(discord.ui.View):
                     "You can only edit tasks that you created. Server admins can edit any task.",
                     emoji="🚫",
                 ),
-                ephemeral=True,
             )
             self.stop()
             return
@@ -796,7 +787,6 @@ class CompleteTaskFlowView(discord.ui.View):
         if not board:
             await interaction.response.send_message(
                 embed=self.embeds.message("Board Not Found", "That board no longer exists.", emoji="⚠️"),
-                ephemeral=True,
             )
             self.stop()
             return
@@ -814,7 +804,6 @@ class CompleteTaskFlowView(discord.ui.View):
                     "This board has no tasks.",
                     emoji="⚠️",
                 ),
-                ephemeral=True,
             )
             self.stop()
             return
@@ -851,7 +840,6 @@ class CompleteTaskFlowView(discord.ui.View):
         if not task:
             await interaction.response.send_message(
                 embed=self.embeds.message("Task Not Found", "That task no longer exists.", emoji="⚠️"),
-                ephemeral=True,
             )
             self.stop()
             return
@@ -860,7 +848,6 @@ class CompleteTaskFlowView(discord.ui.View):
         if task.get("board_id") != self.selected_board_id:
             await interaction.response.send_message(
                 embed=self.embeds.message("Invalid Task", "Task doesn't belong to selected board.", emoji="⚠️"),
-                ephemeral=True,
             )
             self.stop()
             return
