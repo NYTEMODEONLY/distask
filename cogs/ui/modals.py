@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Callable, Optional
+from typing import TYPE_CHECKING, Callable, List, Optional
 
 import discord
 
@@ -249,7 +249,8 @@ class AddTaskModal(discord.ui.Modal):
         column_name: str,
         db: "Database",
         embeds: "EmbedFactory",
-        assignee_id: Optional[int] = None,
+        assignee_id: Optional[int] = None,  # Backwards compatibility
+        assignee_ids: Optional[List[int]] = None,  # New: multiple assignees
         due_date_preset: Optional[str] = None,
     ) -> None:
         super().__init__(title=f"Add Task to {board_name}", timeout=300)
@@ -259,7 +260,8 @@ class AddTaskModal(discord.ui.Modal):
         self.column_name = column_name
         self.db = db
         self.embeds = embeds
-        self.assignee_id = assignee_id  # Store pre-selected assignee
+        # Prefer assignee_ids (multiple) over assignee_id (single) for backwards compatibility
+        self.assignee_ids = assignee_ids if assignee_ids is not None else ([assignee_id] if assignee_id else [])
 
         self.title_input = discord.ui.TextInput(
             label="Task Title",
@@ -275,15 +277,20 @@ class AddTaskModal(discord.ui.Modal):
             required=False,
             style=discord.TextStyle.paragraph,
         )
-        # If assignee_id provided from user selector, pre-fill it
-        assignee_placeholder = f"Selected: {assignee_id}" if assignee_id else "@user or user ID (optional)"
+        # If assignee_ids provided from user selector, show count; otherwise allow manual input
+        if self.assignee_ids:
+            assignee_placeholder = f"Pre-selected: {len(self.assignee_ids)} user(s) (or add more manually)"
+            assignee_default = ", ".join([f"<@{uid}>" for uid in self.assignee_ids[:3]]) + (f" +{len(self.assignee_ids) - 3} more" if len(self.assignee_ids) > 3 else "")
+        else:
+            assignee_placeholder = "@user or user ID (optional; separate multiple with commas)"
+            assignee_default = ""
         self.assignee_input = discord.ui.TextInput(
-            label="Assignee (optional)",
+            label="Assignee(s) (optional)",
             placeholder=assignee_placeholder,
-            default=str(assignee_id) if assignee_id else "",
+            default=assignee_default,
             required=False,
             style=discord.TextStyle.short,
-            max_length=100,
+            max_length=500,  # Increased for multiple mentions
         )
         self.due_date_input = discord.ui.TextInput(
             label="Due Date (optional)",
@@ -313,22 +320,34 @@ class AddTaskModal(discord.ui.Modal):
         title = self.title_input.value.strip()
         description = self.description_input.value.strip() if self.description_input.value else None
 
-        # Parse assignee - use pre-selected assignee_id if available, otherwise parse from input
-        assignee_id = None
-        if self.assignee_id:  # Use pre-selected assignee from user selector
-            assignee_id = self.assignee_id
-        elif self.assignee_input.value and self.assignee_input.value.strip():
-            # User typed in assignee field, parse it
-            assignee_id = parse_user_mention_or_id(self.assignee_input.value)
-            if not assignee_id:
-                await interaction.response.send_message(
-                    embed=self.embeds.message(
-                        "Invalid Assignee",
-                        "Please provide a valid user mention (@user) or user ID.",
-                        emoji="⚠️",
-                    ),
-                )
-                return
+        # Parse assignees - start with pre-selected assignee_ids, then add any from manual input
+        final_assignee_ids = list(self.assignee_ids) if self.assignee_ids else []
+        
+        # Parse manual input if provided (supports comma-separated mentions/IDs)
+        if self.assignee_input.value and self.assignee_input.value.strip():
+            manual_input = self.assignee_input.value.strip()
+            # Remove pre-filled mentions if present
+            if manual_input.startswith("<@") and "Pre-selected" not in self.assignee_input.placeholder:
+                # Try to parse multiple mentions/IDs from comma-separated input
+                parts = [p.strip() for p in manual_input.split(",")]
+                for part in parts:
+                    parsed_id = parse_user_mention_or_id(part)
+                    if parsed_id and parsed_id not in final_assignee_ids:
+                        final_assignee_ids.append(parsed_id)
+            else:
+                # Single mention/ID
+                parsed_id = parse_user_mention_or_id(manual_input)
+                if parsed_id and parsed_id not in final_assignee_ids:
+                    final_assignee_ids.append(parsed_id)
+                elif parsed_id is None and manual_input:
+                    await interaction.response.send_message(
+                        embed=self.embeds.message(
+                            "Invalid Assignee",
+                            "Please provide valid user mention(s) (@user) or user ID(s), separated by commas.",
+                            emoji="⚠️",
+                        ),
+                    )
+                    return
 
         # Parse due date
         due_iso = None
@@ -343,12 +362,16 @@ class AddTaskModal(discord.ui.Modal):
 
         await interaction.response.defer(thinking=True)
 
+        # Use first assignee for backwards compatibility with assignee_id field
+        assignee_id = final_assignee_ids[0] if final_assignee_ids else None
+        
         task_id = await self.db.create_task(
             board_id=self.board_id,
             column_id=self.column_id,
             title=title,
             description=description,
-            assignee_id=assignee_id,
+            assignee_id=assignee_id,  # Backwards compatibility
+            assignee_ids=final_assignee_ids if final_assignee_ids else None,  # Multiple assignees
             due_date=due_iso,
             created_by=interaction.user.id,
         )
@@ -392,12 +415,23 @@ class EditTaskModal(discord.ui.Modal):
             required=False,
             style=discord.TextStyle.paragraph,
         )
+        # Pre-fill assignees if task has them
+        assignee_ids = task.get("assignee_ids", [])
+        assignee_id = task.get("assignee_id")
+        if assignee_ids:
+            assignee_default = ", ".join([f"<@{uid}>" for uid in assignee_ids[:3]]) + (f" +{len(assignee_ids) - 3} more" if len(assignee_ids) > 3 else "")
+        elif assignee_id:
+            assignee_default = f"<@{assignee_id}>"
+        else:
+            assignee_default = ""
+        
         self.assignee_input = discord.ui.TextInput(
-            label="Assignee (optional)",
-            placeholder="@user, user ID, or empty to unassign",
+            label="Assignee(s) (optional)",
+            placeholder="@user(s) or user ID(s), comma-separated (empty to clear all)",
+            default=assignee_default,
             required=False,
             style=discord.TextStyle.short,
-            max_length=100,
+            max_length=500,  # Increased for multiple mentions
         )
         self.due_date_input = discord.ui.TextInput(
             label="Due Date (optional)",
@@ -434,22 +468,35 @@ class EditTaskModal(discord.ui.Modal):
             desc = self.description_input.value.strip()
             updates["description"] = desc if desc else None
 
-        # Handle assignee
-        if self.assignee_input.value:
+        # Handle assignees (supports multiple)
+        if self.assignee_input.value is not None:
             assignee_text = self.assignee_input.value.strip()
             if assignee_text:
-                assignee_id = parse_user_mention_or_id(assignee_text)
-                if not assignee_id:
+                # Parse comma-separated assignees
+                parts = [p.strip() for p in assignee_text.split(",")]
+                assignee_ids = []
+                for part in parts:
+                    parsed_id = parse_user_mention_or_id(part)
+                    if parsed_id and parsed_id not in assignee_ids:
+                        assignee_ids.append(parsed_id)
+                
+                if assignee_ids:
+                    # Set all assignees (replaces existing)
+                    await self.db.set_task_assignees(self.task_id, assignee_ids)
+                    # For backwards compatibility, also update assignee_id
+                    updates["assignee_id"] = assignee_ids[0]
+                else:
                     await interaction.response.send_message(
                         embed=self.embeds.message(
                             "Invalid Assignee",
-                            "Please provide a valid user mention (@user) or user ID.",
+                            "Please provide valid user mention(s) (@user) or user ID(s), separated by commas.",
                             emoji="⚠️",
                         ),
                     )
                     return
-                updates["assignee_id"] = assignee_id
             else:
+                # Clear all assignees
+                await self.db.set_task_assignees(self.task_id, [])
                 updates["assignee_id"] = None
 
         # Handle due date
@@ -618,11 +665,11 @@ class AssignTaskModal(discord.ui.Modal):
             max_length=20,
         )
         self.assignee_input = discord.ui.TextInput(
-            label="Assignee",
-            placeholder="@user or user ID",
+            label="Assignee(s)",
+            placeholder="@user or user ID (comma-separated for multiple)",
             required=True,
             style=discord.TextStyle.short,
-            max_length=100,
+            max_length=500,  # Increased for multiple mentions
         )
         self.add_item(self.task_id_input)
         self.add_item(self.assignee_input)
@@ -643,13 +690,22 @@ class AssignTaskModal(discord.ui.Modal):
             )
             return
 
-        # Parse assignee
-        assignee_id = parse_user_mention_or_id(self.assignee_input.value)
-        if not assignee_id:
+        # Parse assignees (supports multiple comma-separated)
+        assignee_text = self.assignee_input.value.strip()
+        assignee_ids = []
+        
+        # Try parsing as comma-separated list first
+        parts = [p.strip() for p in assignee_text.split(",")]
+        for part in parts:
+            parsed_id = parse_user_mention_or_id(part)
+            if parsed_id and parsed_id not in assignee_ids:
+                assignee_ids.append(parsed_id)
+        
+        if not assignee_ids:
             await interaction.response.send_message(
                 embed=self.embeds.message(
                     "Invalid Assignee",
-                    "Please provide a valid user mention (@user) or user ID.",
+                    "Please provide valid user mention(s) (@user) or user ID(s), separated by commas.",
                     emoji="⚠️",
                 ),
             )
@@ -678,10 +734,18 @@ class AssignTaskModal(discord.ui.Modal):
             )
             return
 
-        # Assign the task
-        await self.db.update_task(task_id, assignee_id=assignee_id)
+        # Add assignees (they'll be added to existing ones)
+        await self.db.add_task_assignees(task_id, assignee_ids)
+        
+        # Format success message
+        if len(assignee_ids) == 1:
+            message = f"Task #{task_id} now includes <@{assignee_ids[0]}> as an assignee."
+        else:
+            mentions = ", ".join([f"<@{uid}>" for uid in assignee_ids])
+            message = f"Task #{task_id} now includes {mentions} as assignees."
+        
         await interaction.followup.send(
-            embed=self.embeds.message("Task Assigned", f"#{task_id} now belongs to <@{assignee_id}>", emoji="👥"),
+            embed=self.embeds.message("Task Assigned", message, emoji="👥"),
         )
 
 

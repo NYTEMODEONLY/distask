@@ -391,7 +391,8 @@ class TasksCog(commands.Cog):
         return task
 
     def _format_task_line(self, task) -> str:
-        assignee = f"<@{task['assignee_id']}>" if task.get("assignee_id") else "—"
+        from utils.embeds import _format_assignees
+        assignee = _format_assignees(task).replace("👤 ", "").replace("👥 ", "")
         status = "✅" if task.get("completed") else "❌"
         due = task.get("due_date") or "—"
         return f"#{task['id']} [{status}] {task['title']} · Due: {due} · Assignee: {assignee}"
