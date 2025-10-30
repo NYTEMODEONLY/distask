@@ -326,20 +326,25 @@ class AddTaskModal(discord.ui.Modal):
         # Parse manual input if provided (supports comma-separated mentions/IDs)
         if self.assignee_input.value and self.assignee_input.value.strip():
             manual_input = self.assignee_input.value.strip()
-            # Remove pre-filled mentions if present
-            if manual_input.startswith("<@") and "Pre-selected" not in self.assignee_input.placeholder:
-                # Try to parse multiple mentions/IDs from comma-separated input
+            
+            # Check if input contains comma-separated mentions (indicating multiple users)
+            # This handles both pre-filled values and user-entered comma-separated input
+            if manual_input.startswith("<@") and "," in manual_input:
+                # Parse multiple mentions/IDs from comma-separated input
                 parts = [p.strip() for p in manual_input.split(",")]
                 for part in parts:
+                    # Handle "+X more" suffix that might be in pre-filled value
+                    if "+" in part and "more" in part:
+                        continue  # Skip "+X more" text
                     parsed_id = parse_user_mention_or_id(part)
                     if parsed_id and parsed_id not in final_assignee_ids:
                         final_assignee_ids.append(parsed_id)
-            else:
+            elif manual_input.startswith("<@"):
                 # Single mention/ID
                 parsed_id = parse_user_mention_or_id(manual_input)
                 if parsed_id and parsed_id not in final_assignee_ids:
                     final_assignee_ids.append(parsed_id)
-                elif parsed_id is None and manual_input:
+                elif parsed_id is None:
                     await interaction.response.send_message(
                         embed=self.embeds.message(
                             "Invalid Assignee",
@@ -348,6 +353,29 @@ class AddTaskModal(discord.ui.Modal):
                         ),
                     )
                     return
+            else:
+                # Try parsing as user ID or comma-separated IDs
+                if "," in manual_input:
+                    # Multiple user IDs separated by commas
+                    parts = [p.strip() for p in manual_input.split(",")]
+                    for part in parts:
+                        parsed_id = parse_user_mention_or_id(part)
+                        if parsed_id and parsed_id not in final_assignee_ids:
+                            final_assignee_ids.append(parsed_id)
+                else:
+                    # Single user ID
+                    parsed_id = parse_user_mention_or_id(manual_input)
+                    if parsed_id and parsed_id not in final_assignee_ids:
+                        final_assignee_ids.append(parsed_id)
+                    elif parsed_id is None:
+                        await interaction.response.send_message(
+                            embed=self.embeds.message(
+                                "Invalid Assignee",
+                                "Please provide valid user mention(s) (@user) or user ID(s), separated by commas.",
+                                emoji="⚠️",
+                            ),
+                        )
+                        return
 
         # Parse due date
         due_iso = None
