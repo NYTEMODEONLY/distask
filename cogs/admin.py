@@ -55,7 +55,7 @@ class AdminCog(commands.Cog):
             results.append(app_commands.Choice(name=column["name"], value=column["name"]))
         return results[:25]
 
-    @app_commands.command(name="add-column", description="Add a column to a board")
+    @app_commands.command(name="add-column", description="[Server] Add a column to a board")
     @app_commands.checks.has_permissions(manage_channels=True)
     @app_commands.checks.cooldown(1, 3.0)
     async def add_column(self, interaction: discord.Interaction) -> None:
@@ -103,7 +103,7 @@ class AdminCog(commands.Cog):
             view=view,
         )
 
-    @app_commands.command(name="remove-column", description="Remove a column (must be empty)")
+    @app_commands.command(name="remove-column", description="[Server] Remove a column (must be empty)")
     @app_commands.checks.has_permissions(manage_channels=True)
     @app_commands.checks.cooldown(1, 3.0)
     async def remove_column(self, interaction: discord.Interaction) -> None:
@@ -185,7 +185,7 @@ class AdminCog(commands.Cog):
             view=view,
         )
 
-    @app_commands.command(name="toggle-notifications", description="Enable or disable due reminders for this server")
+    @app_commands.command(name="toggle-notifications", description="[Server] Enable or disable due reminders for this server")
     @app_commands.checks.has_permissions(manage_guild=True)
     @app_commands.checks.cooldown(1, 3.0)
     async def toggle_notifications(self, interaction: discord.Interaction) -> None:
@@ -207,7 +207,7 @@ class AdminCog(commands.Cog):
             view=view,
         )
 
-    @app_commands.command(name="set-reminder", description="Set the daily reminder time (UTC)")
+    @app_commands.command(name="set-reminder", description="[Server] Set the daily reminder time (UTC)")
     @app_commands.checks.has_permissions(manage_guild=True)
     @app_commands.checks.cooldown(1, 3.0)
     async def set_reminder(self, interaction: discord.Interaction) -> None:
@@ -222,7 +222,7 @@ class AdminCog(commands.Cog):
         modal = ReminderTimeModal(db=self.db, embeds=self.embeds)
         await interaction.response.send_modal(modal)
 
-    @app_commands.command(name="mark-feature-completed", description="Manually mark a feature request as completed (admin only)")
+    @app_commands.command(name="mark-feature-completed", description="[Server] Manually mark a feature request as completed (admin only)")
     @app_commands.checks.has_permissions(manage_guild=True)
     @app_commands.checks.cooldown(1, 10.0)
     @app_commands.describe(feature_id="The feature request ID to mark as completed", commit_hash="Optional: commit hash that completed this feature")
@@ -293,23 +293,23 @@ class AdminCog(commands.Cog):
                 ),
             )
 
-    @app_commands.command(name="distask-help", description="Show help for DisTask")
+    @app_commands.command(name="distask-help", description="[Global] Show help for DisTask")
     @app_commands.checks.cooldown(1, 3.0)
     async def distask_help(self, interaction: discord.Interaction) -> None:
         # Create a rich embed with sections
         embed = discord.Embed(
             title="📚 Command Guide",
-            description="DisTask Command Groups",
+            description="DisTask Command Groups\n\n**Scope Indicators:**\n• `[Server]` - Works within this server only\n• `[Global]` - Works anywhere (DM or server)",
             color=discord.Color.from_rgb(118, 75, 162),  # Default blue-purple
         )
         
         # Boards section
         boards_commands = (
-            "`/create-board` - Create a new task board\n"
-            "`/list-boards` - List all boards in this server\n"
-            "`/view-board` - View a board's configuration\n"
-            "`/delete-board` - Delete a board and all its tasks\n"
-            "`/board-stats` - Show quick stats for a board"
+            "`/create-board` [Server] - Create a new task board\n"
+            "`/list-boards` [Server] - List all boards in this server\n"
+            "`/view-board` [Server] - View a board's configuration\n"
+            "`/delete-board` [Server] - Delete a board and all its tasks\n"
+            "`/board-stats` [Server] - Show quick stats for a board"
         )
         embed.add_field(
             name="📋 Boards",
@@ -319,14 +319,14 @@ class AdminCog(commands.Cog):
         
         # Tasks section
         tasks_commands = (
-            "`/add-task` - Create a new task on a board\n"
-            "`/list-tasks` - List tasks on a board\n"
-            "`/move-task` - Move a task to another column\n"
-            "`/assign-task` - Assign a task to a member\n"
-            "`/edit-task` - Update details for a task\n"
-            "`/complete-task` - Mark a task complete/incomplete\n"
-            "`/delete-task` - Remove a task\n"
-            "`/search-task` - Full-text search across tasks"
+            "`/add-task` [Server] - Create a new task on a board\n"
+            "`/list-tasks` [Server] - List tasks on a board\n"
+            "`/move-task` [Server] - Move a task to another column\n"
+            "`/assign-task` [Server] - Assign a task to a member\n"
+            "`/edit-task` [Server] - Update details for a task\n"
+            "`/complete-task` [Server] - Mark a task complete/incomplete\n"
+            "`/delete-task` [Server] - Remove a task\n"
+            "`/search-task` [Server] - Full-text search across tasks"
         )
         embed.add_field(
             name="📝 Tasks",
@@ -336,11 +336,11 @@ class AdminCog(commands.Cog):
         
         # Admin section
         admin_commands = (
-            "`/add-column` - Add a column to a board\n"
-            "`/remove-column` - Remove a column (must be empty)\n"
-            "`/toggle-notifications` - Enable or disable due reminders for this server\n"
-            "`/set-reminder` - Set the daily reminder time (UTC)\n"
-            "`/mark-feature-completed` - Manually mark a feature request as completed"
+            "`/add-column` [Server] - Add a column to a board\n"
+            "`/remove-column` [Server] - Remove a column (must be empty)\n"
+            "`/toggle-notifications` [Server] - Enable or disable due reminders for this server\n"
+            "`/set-reminder` [Server] - Set the daily reminder time (UTC)\n"
+            "`/mark-feature-completed` [Server] - Manually mark a feature request as completed"
         )
         embed.add_field(
             name="⚙️ Admin",
@@ -350,7 +350,8 @@ class AdminCog(commands.Cog):
         
         # Features section
         features_commands = (
-            "`/request-feature` - Suggest a new feature for DisTask"
+            "`/request-feature` [Global] - Suggest a new feature for DisTask\n"
+            "`/check-duplicates` [Global] - Check for duplicate feature requests"
         )
         embed.add_field(
             name="✨ Features",
