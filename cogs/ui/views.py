@@ -230,8 +230,18 @@ class AddTaskFlowView(discord.ui.View):
         # Set initial board options
         self.board_select.options = initial_board_options
         
-        # Initialize column_select with empty options (required for disabled selects)
-        self.column_select.options = []
+        # Create column_select manually (can't use decorator with empty options when disabled)
+        column_select = discord.ui.Select(
+            placeholder="2. Select a column...",
+            min_values=1,
+            max_values=1,
+            disabled=True,
+            row=1,
+            options=[discord.SelectOption(label="(Select board first)", value="__placeholder__", default=False)]
+        )
+        column_select.callback = self.column_select_callback
+        self.add_item(column_select)
+        self.column_select = column_select
 
     @discord.ui.select(placeholder="1. Select a board...", min_values=1, max_values=1, row=0)
     async def board_select(self, interaction: discord.Interaction, select: discord.ui.Select) -> None:
@@ -270,8 +280,11 @@ class AddTaskFlowView(discord.ui.View):
             view=self,
         )
 
-    @discord.ui.select(placeholder="2. Select a column...", min_values=1, max_values=1, disabled=True, row=1, options=[])
-    async def column_select(self, interaction: discord.Interaction, select: discord.ui.Select) -> None:
+    async def column_select_callback(self, interaction: discord.Interaction, select: discord.ui.Select) -> None:
+        # Ignore placeholder option
+        if not select.values or select.values[0] == "__placeholder__":
+            return
+        
         column_name = select.values[0]
         column = await self.db.get_column_by_name(self.selected_board_id, column_name)
         if not column:
