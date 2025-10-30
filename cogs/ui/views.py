@@ -149,7 +149,17 @@ class CreateBoardFlowView(discord.ui.View):
             max_values=1,
             row=0,
         )
-        channel_select.callback = self.channel_select_callback
+        # Create wrapper callback - Discord.py only passes interaction when manually set
+        async def channel_select_callback_wrapper(interaction: discord.Interaction) -> None:
+            # Get the select component from the view
+            select_component = None
+            for item in self.children:
+                if isinstance(item, discord.ui.ChannelSelect) and item.row == 0:
+                    select_component = item
+                    break
+            if select_component:
+                await self.channel_select_callback(interaction, select_component)
+        channel_select.callback = channel_select_callback_wrapper
         self.add_item(channel_select)
 
     async def channel_select_callback(self, interaction: discord.Interaction, select: discord.ui.ChannelSelect) -> None:
