@@ -221,6 +221,7 @@ class AddTaskFlowView(discord.ui.View):
         self.selected_board_name: Optional[str] = None
         self.selected_column_id: Optional[int] = None
         self.selected_column_name: Optional[str] = None
+        self.selected_due_date_preset: Optional[str] = None
 
         # Set initial board options
         self.board_select.options = initial_board_options
@@ -250,12 +251,13 @@ class AddTaskFlowView(discord.ui.View):
 
         self.column_select.options = column_options
         self.column_select.disabled = False
+        self.due_date_preset_select.disabled = False
         self.continue_button.disabled = False
 
         await interaction.response.edit_message(
             embed=self.embeds.message(
                 "Add Task",
-                f"Board: **{board['name']}**\n\nNow select a column and click Continue.",
+                f"Board: **{board['name']}**\n\nNow select a column and optionally choose a due date preset, then click Continue.",
                 emoji="➕",
             ),
             view=self,
@@ -278,13 +280,43 @@ class AddTaskFlowView(discord.ui.View):
         await interaction.response.edit_message(
             embed=self.embeds.message(
                 "Add Task",
-                f"Board: **{self.selected_board_name}**\nColumn: **{column_name}**\n\nClick Continue to open the task form.",
+                f"Board: **{self.selected_board_name}**\nColumn: **{column_name}**\n\nOptionally choose a due date preset, then click Continue to open the task form.",
                 emoji="➕",
             ),
             view=self,
         )
 
-    @discord.ui.button(label="Continue", style=discord.ButtonStyle.primary, disabled=True, row=2)
+    @discord.ui.select(
+        placeholder="3. Due Date Preset (optional)",
+        min_values=0,
+        max_values=1,
+        disabled=True,
+        row=2,
+        options=[
+            discord.SelectOption(label="Today", value="Today", description="Due end of today"),
+            discord.SelectOption(label="Tomorrow", value="Tomorrow", description="Due end of tomorrow"),
+            discord.SelectOption(label="3 Days", value="3 Days", description="Due in 3 days"),
+            discord.SelectOption(label="6 Days", value="6 Days", description="Due in 6 days"),
+            discord.SelectOption(label="7 Days", value="7 Days", description="Due in 7 days"),
+        ],
+    )
+    async def due_date_preset_select(self, interaction: discord.Interaction, select: discord.ui.Select) -> None:
+        if select.values:
+            self.selected_due_date_preset = select.values[0]
+        else:
+            self.selected_due_date_preset = None
+        
+        preset_text = f"\nDue Date Preset: **{self.selected_due_date_preset}**" if self.selected_due_date_preset else ""
+        await interaction.response.edit_message(
+            embed=self.embeds.message(
+                "Add Task",
+                f"Board: **{self.selected_board_name}**\nColumn: **{self.selected_column_name}**{preset_text}\n\nClick Continue to open the task form.",
+                emoji="➕",
+            ),
+            view=self,
+        )
+
+    @discord.ui.button(label="Continue", style=discord.ButtonStyle.primary, disabled=True, row=3)
     async def continue_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         if not self.selected_board_id or not self.selected_column_id:
             await interaction.response.send_message(
@@ -299,6 +331,7 @@ class AddTaskFlowView(discord.ui.View):
             column_name=self.selected_column_name,
             db=self.db,
             embeds=self.embeds,
+            due_date_preset=self.selected_due_date_preset,
         )
         await interaction.response.send_modal(modal)
         self.stop()
