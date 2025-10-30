@@ -1,5 +1,6 @@
 | ID | User ID | Guild ID | Title | Suggestion | Suggested Priority | Status | Priority | Ease | Score | Upvotes | Downvotes | Duplicate Votes | Duplicate Of | Last Analyzed | Created At | Completed At |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 17 | 536648724244332544 | 1432217453370413118 | Multiple assignees | I would like the option to have multiple people assigned to a task | - | pending | - | - | - | 0 | 0 | 0 | - | - | 2025-10-30 18:37:08 UTC | - |
 | 16 | 536648724244332544 | 1432217453370413118 | recover deleted tasks | I deleted a task that shouldn’t have been deleted, I want to recover it | - | pending | - | - | 10 | 0 | 0 | 0 | - | 2025-10-30 18:08:48 UTC | 2025-10-30 03:53:42 UTC | - |
 | 15 | 536648724244332544 | 1432217453370413118 | Add rewards for completing a task | Please add a way to add rewards for the completion of a task | high | pending | - | - | 10 | 0 | 0 | 0 | - | 2025-10-30 18:08:48 UTC | 2025-10-29 12:05:50 UTC | - |
 | 14 | 536648724244332544 | 1432217453370413118 | Tip the creator | There be a command or link that can be clicked on to a venmo/cashapp/etc for tipping the creator of the bot | Highest | pending | - | - | 10 | 0 | 0 | 0 | - | 2025-10-30 18:08:48 UTC | 2025-10-29 11:57:16 UTC | - |
