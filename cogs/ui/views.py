@@ -257,9 +257,16 @@ class AddTaskFlowView(discord.ui.View):
             disabled=True,
             row=2,
         )
-        # Create wrapper callback that matches UserSelect signature
-        async def user_select_callback_wrapper(interaction: discord.Interaction, select: discord.ui.UserSelect) -> None:
-            await self.user_select_callback(interaction, select)
+        # Create wrapper callback - Discord.py only passes interaction when manually set
+        async def user_select_callback_wrapper(interaction: discord.Interaction) -> None:
+            # Get the select component from the view
+            select_component = None
+            for item in self.children:
+                if isinstance(item, discord.ui.UserSelect) and item.row == 2:
+                    select_component = item
+                    break
+            if select_component:
+                await self.user_select_callback(interaction, select_component)
         user_select.callback = user_select_callback_wrapper
         self.add_item(user_select)
         self.user_select = user_select
