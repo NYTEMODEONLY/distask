@@ -256,6 +256,7 @@ class AddTaskModal(discord.ui.Modal):
         column_name: str,
         db: "Database",
         embeds: "EmbedFactory",
+        assignee_id: Optional[int] = None,
         due_date_preset: Optional[str] = None,
     ) -> None:
         super().__init__(title=f"Add Task to {board_name}", timeout=300)
@@ -265,6 +266,7 @@ class AddTaskModal(discord.ui.Modal):
         self.column_name = column_name
         self.db = db
         self.embeds = embeds
+        self.assignee_id = assignee_id  # Store pre-selected assignee
 
         self.title_input = discord.ui.TextInput(
             label="Task Title",
@@ -280,9 +282,12 @@ class AddTaskModal(discord.ui.Modal):
             required=False,
             style=discord.TextStyle.paragraph,
         )
+        # If assignee_id provided from user selector, pre-fill it
+        assignee_placeholder = f"Selected: {assignee_id}" if assignee_id else "@user or user ID (optional)"
         self.assignee_input = discord.ui.TextInput(
             label="Assignee (optional)",
-            placeholder="@user or user ID",
+            placeholder=assignee_placeholder,
+            default=str(assignee_id) if assignee_id else "",
             required=False,
             style=discord.TextStyle.short,
             max_length=100,
@@ -315,9 +320,12 @@ class AddTaskModal(discord.ui.Modal):
         title = self.title_input.value.strip()
         description = self.description_input.value.strip() if self.description_input.value else None
 
-        # Parse assignee
+        # Parse assignee - use pre-selected assignee_id if available, otherwise parse from input
         assignee_id = None
-        if self.assignee_input.value:
+        if self.assignee_id:  # Use pre-selected assignee from user selector
+            assignee_id = self.assignee_id
+        elif self.assignee_input.value and self.assignee_input.value.strip():
+            # User typed in assignee field, parse it
             assignee_id = parse_user_mention_or_id(self.assignee_input.value)
             if not assignee_id:
                 await interaction.response.send_message(

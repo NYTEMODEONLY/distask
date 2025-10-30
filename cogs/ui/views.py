@@ -228,8 +228,10 @@ class AddTaskFlowView(discord.ui.View):
         self.selected_board_name: Optional[str] = None
         self.selected_column_id: Optional[int] = None
         self.selected_column_name: Optional[str] = None
+        self.selected_assignee_id: Optional[int] = None
+        self.selected_assignee_name: Optional[str] = None
         self.selected_due_date_preset: Optional[str] = None
-        self.current_step: int = 1  # 1=board, 2=column, 3=due_date, 4=ready
+        self.current_step: int = 1  # 1=board, 2=column, 3=assignee, 4=due_date, 5=ready
 
         # Set initial board options
         self.board_select.options = initial_board_options
@@ -246,6 +248,18 @@ class AddTaskFlowView(discord.ui.View):
         column_select.callback = self.column_select_callback
         self.add_item(column_select)
         self.column_select = column_select
+        
+        # Create user_select for assignee selection
+        user_select = discord.ui.UserSelect(
+            placeholder="3. Assign to user (optional)",
+            min_values=0,
+            max_values=1,
+            disabled=True,
+            row=2,
+        )
+        user_select.callback = self.user_select_callback
+        self.add_item(user_select)
+        self.user_select = user_select
 
     @discord.ui.select(placeholder="1. Select a board...", min_values=1, max_values=1, row=0)
     async def board_select(self, interaction: discord.Interaction, select: discord.ui.Select) -> None:
@@ -318,31 +332,93 @@ class AddTaskFlowView(discord.ui.View):
         self.selected_column_name = column["name"]
         self.current_step = 3
 
-        # Show only due date select, hide column select
+        # Show user select, hide column select
         self.board_select.disabled = True
         self.column_select.disabled = True
+        self.user_select.disabled = False
         if hasattr(self, 'due_date_preset_select'):
-            self.due_date_preset_select.disabled = False
+            self.due_date_preset_select.disabled = True
         if hasattr(self, 'continue_button'):
-            self.continue_button.disabled = False
+            self.continue_button.disabled = True
         if hasattr(self, 'back_button'):
             self.back_button.disabled = False
 
         await interaction.response.edit_message(
             embed=self.embeds.message(
                 "Add Task",
-                f"Board: **{self.selected_board_name}**\nColumn: **{column_name}**\n\nOptionally choose a due date preset, then click Continue.",
+                f"Board: **{self.selected_board_name}**\nColumn: **{column_name}**\n\nOptionally assign to a user, then choose a due date preset.",
+                emoji="➕",
+            ),
+            view=self,
+        )
+
+    async def user_select_callback(self, interaction: discord.Interaction) -> None:
+        # Discord.py passes only interaction when callback is manually set
+        # Get values from interaction data
+        if not interaction.data or "values" not in interaction.data:
+            # User deselected (min_values=0 allows this)
+            self.selected_assignee_id = None
+            self.selected_assignee_name = None
+            self.current_step = 4
+            
+            # Show due date select
+            self.board_select.disabled = True
+            self.column_select.disabled = True
+            self.user_select.disabled = True
+            if hasattr(self, 'due_date_preset_select'):
+                self.due_date_preset_select.disabled = False
+            if hasattr(self, 'continue_button'):
+                self.continue_button.disabled = False
+            
+            await interaction.response.edit_message(
+                embed=self.embeds.message(
+                    "Add Task",
+                    f"Board: **{self.selected_board_name}**\nColumn: **{self.selected_column_name}**\n\nOptionally choose a due date preset, then click Continue.",
+                    emoji="➕",
+                ),
+                view=self,
+            )
+            return
+        
+        values = interaction.data.get("values", [])
+        if not values:
+            # No user selected
+            self.selected_assignee_id = None
+            self.selected_assignee_name = None
+        else:
+            user_id = int(values[0])
+            self.selected_assignee_id = user_id
+            # Try to get user from guild
+            user = interaction.guild.get_member(user_id) if interaction.guild else None
+            self.selected_assignee_name = user.display_name if user else f"User {user_id}"
+        
+        self.current_step = 4
+        
+        # Show due date select
+        self.board_select.disabled = True
+        self.column_select.disabled = True
+        self.user_select.disabled = True
+        if hasattr(self, 'due_date_preset_select'):
+            self.due_date_preset_select.disabled = False
+        if hasattr(self, 'continue_button'):
+            self.continue_button.disabled = False
+        
+        assignee_text = f"\nAssignee: **{self.selected_assignee_name}**" if self.selected_assignee_id else ""
+        await interaction.response.edit_message(
+            embed=self.embeds.message(
+                "Add Task",
+                f"Board: **{self.selected_board_name}**\nColumn: **{self.selected_column_name}**{assignee_text}\n\nOptionally choose a due date preset, then click Continue.",
                 emoji="➕",
             ),
             view=self,
         )
 
     @discord.ui.select(
-        placeholder="3. Due Date Preset (optional)",
+        placeholder="4. Due Date Preset (optional)",
         min_values=0,
         max_values=1,
         disabled=True,
-        row=2,
+        row=3,
         options=[
             discord.SelectOption(label="Today", value="Today", description="Due end of today"),
             discord.SelectOption(label="Tomorrow", value="Tomorrow", description="Due end of tomorrow"),
@@ -358,10 +434,11 @@ class AddTaskFlowView(discord.ui.View):
             self.selected_due_date_preset = None
         
         preset_text = f"\nDue Date Preset: **{self.selected_due_date_preset}**" if self.selected_due_date_preset else ""
+        assignee_text = f"\nAssignee: **{self.selected_assignee_name}**" if self.selected_assignee_id else ""
         await interaction.response.edit_message(
             embed=self.embeds.message(
                 "Add Task",
-                f"Board: **{self.selected_board_name}**\nColumn: **{self.selected_column_name}**{preset_text}\n\nClick Continue to open the task form.",
+                f"Board: **{self.selected_board_name}**\nColumn: **{self.selected_column_name}**{assignee_text}{preset_text}\n\nClick Continue to open the task form.",
                 emoji="➕",
             ),
             view=self,
@@ -392,14 +469,41 @@ class AddTaskFlowView(discord.ui.View):
             self.selected_column_name = None
             self.board_select.disabled = True
             self.column_select.disabled = False
-            self.due_date_preset_select.disabled = True
-            self.continue_button.disabled = True
-            self.back_button.disabled = False
+            self.user_select.disabled = True
+            if hasattr(self, 'due_date_preset_select'):
+                self.due_date_preset_select.disabled = True
+            if hasattr(self, 'continue_button'):
+                self.continue_button.disabled = True
+            if hasattr(self, 'back_button'):
+                self.back_button.disabled = False
             
             await interaction.response.edit_message(
                 embed=self.embeds.message(
                     "Add Task",
                     f"Board: **{self.selected_board_name}**\n\nNow select a column.",
+                    emoji="➕",
+                ),
+                view=self,
+            )
+        elif self.current_step == 4:
+            # Go back to user selection
+            self.current_step = 3
+            self.selected_assignee_id = None
+            self.selected_assignee_name = None
+            self.board_select.disabled = True
+            self.column_select.disabled = True
+            self.user_select.disabled = False
+            if hasattr(self, 'due_date_preset_select'):
+                self.due_date_preset_select.disabled = True
+            if hasattr(self, 'continue_button'):
+                self.continue_button.disabled = True
+            if hasattr(self, 'back_button'):
+                self.back_button.disabled = False
+            
+            await interaction.response.edit_message(
+                embed=self.embeds.message(
+                    "Add Task",
+                    f"Board: **{self.selected_board_name}**\nColumn: **{self.selected_column_name}**\n\nOptionally assign to a user, then choose a due date preset.",
                     emoji="➕",
                 ),
                 view=self,
@@ -429,6 +533,7 @@ class AddTaskFlowView(discord.ui.View):
             column_name=self.selected_column_name,
             db=self.db,
             embeds=self.embeds,
+            assignee_id=self.selected_assignee_id,
             due_date_preset=self.selected_due_date_preset,
         )
         await interaction.response.send_modal(modal)
