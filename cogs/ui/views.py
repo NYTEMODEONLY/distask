@@ -140,15 +140,19 @@ class CreateBoardFlowView(discord.ui.View):
         self.embeds = embeds
         self.selected_channel_id: Optional[int] = None
         self.selected_channel_name: Optional[str] = None
+        
+        # Create and add ChannelSelect component
+        channel_select = discord.ui.ChannelSelect(
+            placeholder="Select a channel for board updates...",
+            channel_types=[discord.ChannelType.text],
+            min_values=1,
+            max_values=1,
+            row=0,
+        )
+        channel_select.callback = self.channel_select_callback
+        self.add_item(channel_select)
 
-    @discord.ui.channel_select(
-        placeholder="Select a channel for board updates...",
-        channel_types=[discord.ChannelType.text],
-        min_values=1,
-        max_values=1,
-        row=0,
-    )
-    async def channel_select(self, interaction: discord.Interaction, select: discord.ui.ChannelSelect) -> None:
+    async def channel_select_callback(self, interaction: discord.Interaction, select: discord.ui.ChannelSelect) -> None:
         try:
             channel = select.values[0]
             
