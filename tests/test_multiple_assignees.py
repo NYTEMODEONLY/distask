@@ -70,12 +70,13 @@ class TestAssigneeFormatting:
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
 async def test_database_migration_integration():
     """
     Integration test for database migration.
     
     NOTE: This requires a live database connection.
-    Run with: pytest tests/test_multiple_assignees.py::test_database_migration_integration -v
+    Run with: pytest -m integration tests/test_multiple_assignees.py::test_database_migration_integration -v
     """
     from utils.db import Database
     import os
@@ -129,11 +130,13 @@ async def test_database_migration_integration():
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
 async def test_multiple_assignees_crud():
     """
     Test CRUD operations for multiple assignees.
     
     NOTE: This requires a live database connection and a test guild/board.
+    Run with: pytest -m integration tests/test_multiple_assignees.py::test_multiple_assignees_crud -v
     """
     from utils.db import Database
     import os

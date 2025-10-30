@@ -11,6 +11,14 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 
+def pytest_configure(config):
+    """Register custom markers."""
+    config.addinivalue_line(
+        "markers",
+        "integration: marks tests as integration tests (requires live database)",
+    )
+
+
 @pytest.fixture
 def test_db_url():
     """Get test database URL from environment or use default."""
