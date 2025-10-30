@@ -487,9 +487,11 @@ class EditTaskModal(discord.ui.Modal):
         from utils.validators import Validator
         from .helpers import parse_user_mention_or_id
 
+        # PHASE 1: Validate all fields FIRST (no DB mutations yet)
         updates = {}
+        assignee_ids_to_set = None  # Store assignees to set after validation passes
 
-        # Handle title
+        # Validate title
         if self.title_input.value and self.title_input.value.strip():
             validation = Validator.task_title(self.title_input.value)
             if not validation.ok:
@@ -499,12 +501,12 @@ class EditTaskModal(discord.ui.Modal):
                 return
             updates["title"] = self.title_input.value.strip()
 
-        # Handle description
+        # Handle description (no validation needed)
         if self.description_input.value is not None:
             desc = self.description_input.value.strip()
             updates["description"] = desc if desc else None
 
-        # Handle assignees (supports multiple)
+        # Parse assignees (validate without mutating DB)
         if self.assignee_input.value is not None:
             assignee_text = self.assignee_input.value.strip()
             if assignee_text:
@@ -512,25 +514,23 @@ class EditTaskModal(discord.ui.Modal):
                 # If unchanged, use original assignee_ids to preserve all assignees (including truncated ones)
                 if assignee_text == self.assignee_default and self.original_assignee_ids:
                     # User didn't change the field - preserve all original assignees
-                    assignee_ids = self.original_assignee_ids
+                    assignee_ids_to_set = self.original_assignee_ids
                 else:
                     # User changed the field - parse the new input
                     # Parse comma-separated assignees
                     parts = [p.strip() for p in assignee_text.split(",")]
-                    assignee_ids = []
+                    assignee_ids_to_set = []
                     for part in parts:
                         # Handle "+X more" suffix that might be in pre-filled value
                         if "+" in part and "more" in part:
                             continue  # Skip "+X more" text
                         parsed_id = parse_user_mention_or_id(part)
-                        if parsed_id and parsed_id not in assignee_ids:
-                            assignee_ids.append(parsed_id)
+                        if parsed_id and parsed_id not in assignee_ids_to_set:
+                            assignee_ids_to_set.append(parsed_id)
                 
-                if assignee_ids:
-                    # Set all assignees (replaces existing)
-                    await self.db.set_task_assignees(self.task_id, assignee_ids)
-                    # For backwards compatibility, also update assignee_id
-                    updates["assignee_id"] = assignee_ids[0]
+                if assignee_ids_to_set:
+                    # Store for later DB update (after all validation passes)
+                    updates["assignee_id"] = assignee_ids_to_set[0]  # For backwards compatibility
                 else:
                     await interaction.response.send_message(
                         embed=self.embeds.message(
@@ -541,11 +541,11 @@ class EditTaskModal(discord.ui.Modal):
                     )
                     return
             else:
-                # Clear all assignees
-                await self.db.set_task_assignees(self.task_id, [])
+                # Clear all assignees (store for later DB update)
+                assignee_ids_to_set = []
                 updates["assignee_id"] = None
 
-        # Handle due date
+        # Validate due date
         if self.due_date_input.value is not None:
             due_text = self.due_date_input.value.strip()
             if due_text:
@@ -559,14 +559,24 @@ class EditTaskModal(discord.ui.Modal):
             else:
                 updates["due_date"] = None
 
-        if not updates:
+        # Check if any changes were made
+        if not updates and assignee_ids_to_set is None:
             await interaction.response.send_message(
                 embed=self.embeds.message("No Changes", "Provide at least one field to update.", emoji="⚠️"),
             )
             return
 
+        # PHASE 2: All validation passed - defer and apply all changes atomically
         await interaction.response.defer(thinking=True)
-        await self.db.update_task(self.task_id, **updates)
+        
+        # Apply assignee changes (if any)
+        if assignee_ids_to_set is not None:
+            await self.db.set_task_assignees(self.task_id, assignee_ids_to_set)
+        
+        # Apply other field updates
+        if updates:
+            await self.db.update_task(self.task_id, **updates)
+        
         await interaction.followup.send(
             embed=self.embeds.message("Task Updated", f"Edits applied to task #{self.task_id}.", emoji="✨"),
         )
