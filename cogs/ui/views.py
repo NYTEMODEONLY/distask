@@ -532,6 +532,38 @@ class AddTaskFlowView(discord.ui.View):
         self.stop()
 
 
+class EditTaskButtonView(discord.ui.View):
+    """View with a button to open the edit task modal."""
+    
+    def __init__(
+        self,
+        *,
+        task_id: int,
+        task: dict,
+        db: "Database",
+        embeds: "EmbedFactory",
+        timeout: float = 300.0,
+    ) -> None:
+        super().__init__(timeout=timeout)
+        self.task_id = task_id
+        self.task = task
+        self.db = db
+        self.embeds = embeds
+    
+    @discord.ui.button(label="✏️ Edit Task", style=discord.ButtonStyle.primary)
+    async def edit_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        from .modals import EditTaskModal
+        
+        edit_modal = EditTaskModal(
+            task_id=self.task_id,
+            task=self.task,
+            db=self.db,
+            embeds=self.embeds,
+        )
+        await interaction.response.send_modal(edit_modal)
+        self.stop()
+
+
 class TaskActionsView(discord.ui.View):
     """View with Complete/Incomplete/Delete buttons for a task."""
 

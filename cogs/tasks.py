@@ -246,14 +246,35 @@ class TasksCog(commands.Cog):
                 )
                 return
 
-            # Show edit modal with pre-filled values
-            edit_modal = EditTaskModal(
+            # Cannot send modal after modal - Discord limitation
+            # Create a button that opens the edit modal
+            from .ui.views import EditTaskButtonView
+            
+            view = EditTaskButtonView(
                 task_id=task_id,
                 task=task,
                 db=self.db,
                 embeds=self.embeds,
             )
-            await inter.response.send_modal(edit_modal)
+            
+            # Format due date for display if it exists
+            due_date_display = ""
+            if task.get("due_date"):
+                from utils.embeds import _format_time
+                try:
+                    due_date_display = f"\n⏰ Due: {_format_time(task['due_date'])}"
+                except Exception:
+                    pass
+            
+            await inter.response.send_message(
+                embed=self.embeds.message(
+                    "Edit Task",
+                    f"Task #{task_id}: **{task.get('title', 'Untitled')}**{due_date_display}\n\nClick the button below to edit:",
+                    emoji="✏️",
+                ),
+                view=view,
+                ephemeral=True,
+            )
 
         modal = TaskIDInputModal(
             title="Edit Task",
