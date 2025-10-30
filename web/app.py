@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import hmac
+import hashlib
+import json
 import os
 import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, HTTPException, Header
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -737,3 +741,88 @@ async def service_status() -> JSONResponse:
         "checked_at": datetime.now(timezone.utc).isoformat(),
     }
     return JSONResponse(payload)
+
+
+def verify_github_signature(payload_body: bytes, signature_header: str, secret: str) -> bool:
+    """Verify GitHub webhook signature using HMAC SHA256."""
+    if not signature_header:
+        return False
+    
+    # GitHub sends signature as "sha256=<hash>"
+    if not signature_header.startswith("sha256="):
+        return False
+    
+    hash_object = hmac.new(secret.encode(), msg=payload_body, digestmod=hashlib.sha256)
+    expected_signature = "sha256=" + hash_object.hexdigest()
+    
+    return hmac.compare_digest(expected_signature, signature_header)
+
+
+@app.post("/webhooks/github")
+async def github_webhook(request: Request, x_hub_signature_256: str | None = Header(None)) -> JSONResponse:
+    """
+    GitHub webhook endpoint for automatic code sync.
+    
+    Receives push events from GitHub and triggers git sync script.
+    Verifies webhook signature for security.
+    """
+    # Check if webhook is enabled
+    webhook_secret = os.getenv("GITHUB_WEBHOOK_SECRET")
+    if not webhook_secret:
+        raise HTTPException(status_code=503, detail="GitHub webhook not configured (GITHUB_WEBHOOK_SECRET missing)")
+    
+    # Get raw body for signature verification
+    payload_body = await request.body()
+    
+    # Verify signature
+    if not verify_github_signature(payload_body, x_hub_signature_256 or "", webhook_secret):
+        raise HTTPException(status_code=401, detail="Invalid webhook signature")
+    
+    # Parse payload
+    try:
+        payload = json.loads(payload_body)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload")
+    
+    # Check if this is a push event
+    event_type = request.headers.get("X-GitHub-Event", "")
+    if event_type != "push":
+        return JSONResponse({"status": "ignored", "reason": f"Event type '{event_type}' not handled"})
+    
+    # Get branch from payload
+    ref = payload.get("ref", "")
+    expected_branch = os.getenv("GIT_SYNC_BRANCH", "main")
+    
+    # Check if push is to the monitored branch
+    if not ref.endswith(f"/{expected_branch}"):
+        return JSONResponse({
+            "status": "ignored",
+            "reason": f"Push to '{ref}' not monitored (expected '{expected_branch}')"
+        })
+    
+    # Get sync script path
+    repo_root = Path(__file__).resolve().parent.parent
+    sync_script = repo_root / "scripts" / "git_sync.py"
+    
+    if not sync_script.exists():
+        raise HTTPException(status_code=500, detail="Sync script not found")
+    
+    # Trigger sync script asynchronously (don't wait for completion)
+    try:
+        subprocess.Popen(
+            [sys.executable, str(sync_script)],
+            cwd=str(repo_root),
+            env=dict(os.environ, PYTHONUNBUFFERED="1"),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to trigger sync: {str(e)}")
+    
+    # Return immediately (sync runs in background)
+    commit_sha = payload.get("after", "")[:8] if payload.get("after") else "unknown"
+    return JSONResponse({
+        "status": "accepted",
+        "message": f"Sync triggered for commit {commit_sha}",
+        "branch": expected_branch,
+    })
