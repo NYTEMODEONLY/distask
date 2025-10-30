@@ -769,8 +769,13 @@ class CompleteTaskFlowView(discord.ui.View):
         self.selected_task: Optional[dict] = None
         self.current_step: int = 1  # 1=board, 2=task
         
-        # Set initial board options
-        self.board_select.options = initial_board_options
+        # Set initial board options (after super().__init__() creates components from decorators)
+        # Find board_select component and set options
+        for item in self.children:
+            if isinstance(item, discord.ui.Select) and item.row == 0:
+                item.options = initial_board_options
+                self.board_select = item
+                break
         
         # Create task_select manually (Discord requires at least one option even when disabled)
         task_select = discord.ui.Select(
