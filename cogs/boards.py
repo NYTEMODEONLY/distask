@@ -33,7 +33,7 @@ class BoardsCog(commands.Cog):
                 results.append(app_commands.Choice(name=f"{board['name']} · {board['id']}", value=str(board["id"])))
         return results[:25]
 
-    @app_commands.command(name="create-board", description="Create a new task board")
+    @app_commands.command(name="create-board", description="[Server] Create a new task board")
     @app_commands.checks.has_permissions(manage_guild=True)
     @app_commands.checks.cooldown(1, 10.0)
     async def create_board(self, interaction: discord.Interaction) -> None:
@@ -59,7 +59,7 @@ class BoardsCog(commands.Cog):
             view=view,
         )
 
-    @app_commands.command(name="list-boards", description="List all boards in this server")
+    @app_commands.command(name="list-boards", description="[Server] List all boards in this server")
     @app_commands.checks.cooldown(1, 3.0)
     async def list_boards(self, interaction: discord.Interaction) -> None:
         if not interaction.guild:
@@ -71,7 +71,7 @@ class BoardsCog(commands.Cog):
         embed = self.embeds.board_list(interaction.guild.name, boards)
         await interaction.response.send_message(embed=embed)
 
-    @app_commands.command(name="delete-board", description="Delete a board and all its tasks")
+    @app_commands.command(name="delete-board", description="[Server] Delete a board and all its tasks")
     @app_commands.checks.has_permissions(manage_guild=True)
     @app_commands.checks.cooldown(1, 10.0)
     async def delete_board(self, interaction: discord.Interaction) -> None:
@@ -127,7 +127,7 @@ class BoardsCog(commands.Cog):
             view=view,
         )
 
-    @app_commands.command(name="view-board", description="View a board's configuration")
+    @app_commands.command(name="view-board", description="[Server] View a board's configuration")
     @app_commands.checks.cooldown(1, 3.0)
     async def view_board(self, interaction: discord.Interaction) -> None:
         from .ui import BoardSelectorView
@@ -193,7 +193,7 @@ class BoardsCog(commands.Cog):
             view=view,
         )
 
-    @app_commands.command(name="board-stats", description="Show quick stats for a board")
+    @app_commands.command(name="board-stats", description="[Server] Show quick stats for a board")
     @app_commands.checks.cooldown(1, 3.0)
     async def board_stats(self, interaction: discord.Interaction) -> None:
         from .ui import BoardSelectorView

@@ -97,7 +97,7 @@ class FeaturesCog(commands.Cog):
         self.community_channel_id = community_channel_id
         self.community_webhook_url = community_webhook_url
 
-    @app_commands.command(name="request-feature", description="Suggest a new feature for DisTask")
+    @app_commands.command(name="request-feature", description="[Global] Suggest a new feature for DisTask")
     @app_commands.checks.cooldown(1, 10.0)
     async def request_feature(self, interaction: discord.Interaction) -> None:
         if interaction.guild_id is None:
@@ -319,7 +319,7 @@ class FeaturesCog(commands.Cog):
             return
         await self.db.adjust_feature_votes(feature["id"], up_delta=up_delta, down_delta=down_delta, duplicate_delta=dup_delta)
 
-    @app_commands.command(name="check-duplicates", description="Check for duplicate or similar feature requests")
+    @app_commands.command(name="check-duplicates", description="[Global] Check for duplicate or similar feature requests")
     @app_commands.checks.cooldown(1, 5.0)
     @app_commands.describe(feature_id="Optional: Check duplicates for a specific feature request ID")
     async def check_duplicates(self, interaction: discord.Interaction, feature_id: Optional[int] = None) -> None:

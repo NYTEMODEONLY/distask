@@ -60,7 +60,7 @@ class TasksCog(commands.Cog):
             results.append(app_commands.Choice(name=column["name"], value=column["name"]))
         return results[:25]
 
-    @app_commands.command(name="add-task", description="Create a new task on a board")
+    @app_commands.command(name="add-task", description="[Server] Create a new task on a board")
     @app_commands.checks.cooldown(1, 10.0)
     async def add_task(self, interaction: discord.Interaction) -> None:
         from .ui import AddTaskFlowView
@@ -95,7 +95,7 @@ class TasksCog(commands.Cog):
             view=view,
         )
 
-    @app_commands.command(name="list-tasks", description="List tasks on a board")
+    @app_commands.command(name="list-tasks", description="[Server] List tasks on a board")
     @app_commands.checks.cooldown(1, 3.0)
     async def list_tasks(self, interaction: discord.Interaction) -> None:
         from .ui import BoardSelectorView
@@ -158,7 +158,7 @@ class TasksCog(commands.Cog):
             view=view,
         )
 
-    @app_commands.command(name="move-task", description="Move a task to another column")
+    @app_commands.command(name="move-task", description="[Server] Move a task to another column")
     @app_commands.checks.cooldown(1, 3.0)
     async def move_task(self, interaction: discord.Interaction) -> None:
         from .ui import MoveTaskModal, ColumnSelectorView
@@ -211,7 +211,7 @@ class TasksCog(commands.Cog):
         )
         await interaction.response.send_modal(modal)
 
-    @app_commands.command(name="assign-task", description="Assign a task to a member")
+    @app_commands.command(name="assign-task", description="[Server] Assign a task to a member")
     @app_commands.checks.cooldown(1, 3.0)
     async def assign_task(self, interaction: discord.Interaction) -> None:
         from .ui import AssignTaskModal
@@ -219,7 +219,7 @@ class TasksCog(commands.Cog):
         modal = AssignTaskModal(db=self.db, embeds=self.embeds)
         await interaction.response.send_modal(modal)
 
-    @app_commands.command(name="edit-task", description="Update details for a task")
+    @app_commands.command(name="edit-task", description="[Server] Update details for a task")
     @app_commands.checks.cooldown(1, 10.0)
     async def edit_task(self, interaction: discord.Interaction) -> None:
         from .ui import EditTaskFlowView
@@ -260,7 +260,7 @@ class TasksCog(commands.Cog):
             view=view,
         )
 
-    @app_commands.command(name="complete-task", description="Mark a task complete/incomplete")
+    @app_commands.command(name="complete-task", description="[Server] Mark a task complete/incomplete")
     @app_commands.checks.cooldown(1, 3.0)
     async def complete_task(self, interaction: discord.Interaction) -> None:
         from .ui import CompleteTaskFlowView
@@ -296,7 +296,7 @@ class TasksCog(commands.Cog):
             view=view,
         )
 
-    @app_commands.command(name="delete-task", description="Remove a task")
+    @app_commands.command(name="delete-task", description="[Server] Remove a task")
     @app_commands.checks.cooldown(1, 3.0)
     async def delete_task(self, interaction: discord.Interaction) -> None:
         from .ui import TaskIDInputModal, DeleteTaskConfirmationView
@@ -343,7 +343,7 @@ class TasksCog(commands.Cog):
         )
         await interaction.response.send_modal(modal)
 
-    @app_commands.command(name="search-task", description="Full-text search across tasks")
+    @app_commands.command(name="search-task", description="[Server] Full-text search across tasks")
     @app_commands.checks.cooldown(1, 10.0)
     async def search_task(self, interaction: discord.Interaction) -> None:
         from .ui import SearchTaskModal
