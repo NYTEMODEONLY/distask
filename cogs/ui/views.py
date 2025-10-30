@@ -298,17 +298,15 @@ class AddTaskFlowView(discord.ui.View):
 
     async def column_select_callback(self, interaction: discord.Interaction) -> None:
         # Discord.py passes only interaction when callback is manually set
-        # Get the select component from the view
-        select_component = None
-        for item in self.children:
-            if isinstance(item, discord.ui.Select) and item.row == 1:
-                select_component = item
-                break
-        
-        if not select_component or not select_component.values or select_component.values[0] == "__placeholder__":
+        # Get values from interaction data
+        if not interaction.data or "values" not in interaction.data:
             return
         
-        column_name = select_component.values[0]
+        values = interaction.data.get("values", [])
+        if not values or values[0] == "__placeholder__":
+            return
+        
+        column_name = values[0]
         column = await self.db.get_column_by_name(self.selected_board_id, column_name)
         if not column:
             await interaction.response.send_message(
