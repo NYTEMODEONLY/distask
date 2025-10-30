@@ -444,14 +444,22 @@ class EditTaskModal(discord.ui.Modal):
             style=discord.TextStyle.paragraph,
         )
         # Pre-fill assignees if task has them
+        # Store original assignee_ids for comparison (to detect if user changed the field)
         assignee_ids = task.get("assignee_ids", [])
         assignee_id = task.get("assignee_id")
         if assignee_ids:
+            # Store the full list to preserve all assignees if user doesn't change the field
+            self.original_assignee_ids = list(assignee_ids)
             assignee_default = ", ".join([f"<@{uid}>" for uid in assignee_ids[:3]]) + (f" +{len(assignee_ids) - 3} more" if len(assignee_ids) > 3 else "")
         elif assignee_id:
+            self.original_assignee_ids = [assignee_id]
             assignee_default = f"<@{assignee_id}>"
         else:
+            self.original_assignee_ids = []
             assignee_default = ""
+        
+        # Store the default value to detect if user changed it
+        self.assignee_default = assignee_default
         
         self.assignee_input = discord.ui.TextInput(
             label="Assignee(s) (optional)",
@@ -500,13 +508,23 @@ class EditTaskModal(discord.ui.Modal):
         if self.assignee_input.value is not None:
             assignee_text = self.assignee_input.value.strip()
             if assignee_text:
-                # Parse comma-separated assignees
-                parts = [p.strip() for p in assignee_text.split(",")]
-                assignee_ids = []
-                for part in parts:
-                    parsed_id = parse_user_mention_or_id(part)
-                    if parsed_id and parsed_id not in assignee_ids:
-                        assignee_ids.append(parsed_id)
+                # Check if user changed the assignee field
+                # If unchanged, use original assignee_ids to preserve all assignees (including truncated ones)
+                if assignee_text == self.assignee_default and self.original_assignee_ids:
+                    # User didn't change the field - preserve all original assignees
+                    assignee_ids = self.original_assignee_ids
+                else:
+                    # User changed the field - parse the new input
+                    # Parse comma-separated assignees
+                    parts = [p.strip() for p in assignee_text.split(",")]
+                    assignee_ids = []
+                    for part in parts:
+                        # Handle "+X more" suffix that might be in pre-filled value
+                        if "+" in part and "more" in part:
+                            continue  # Skip "+X more" text
+                        parsed_id = parse_user_mention_or_id(part)
+                        if parsed_id and parsed_id not in assignee_ids:
+                            assignee_ids.append(parsed_id)
                 
                 if assignee_ids:
                     # Set all assignees (replaces existing)
