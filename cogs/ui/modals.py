@@ -128,7 +128,6 @@ class CreateBoardModal(discord.ui.Modal):
         if not validation.ok:
             await interaction.response.send_message(
                 embed=self.embeds.message("Invalid Board Name", validation.message, emoji="⚠️"),
-                ephemeral=True,
             )
             return
 
@@ -143,7 +142,6 @@ class CreateBoardModal(discord.ui.Modal):
                     "Please select a channel first.",
                     emoji="⚠️",
                 ),
-                ephemeral=True,
             )
             return
         
@@ -159,7 +157,6 @@ class CreateBoardModal(discord.ui.Modal):
                         "The selected channel is not a text channel.",
                         emoji="⚠️",
                     ),
-                    ephemeral=True,
                 )
                 return
             
@@ -171,7 +168,6 @@ class CreateBoardModal(discord.ui.Modal):
                         "Selected channel cannot receive messages.",
                         emoji="⚠️",
                     ),
-                    ephemeral=True,
                 )
                 return
                 
@@ -182,7 +178,6 @@ class CreateBoardModal(discord.ui.Modal):
                     "I couldn't find that channel. It may have been deleted.",
                     emoji="⚠️",
                 ),
-                ephemeral=True,
             )
             return
         except discord.Forbidden:
@@ -192,7 +187,6 @@ class CreateBoardModal(discord.ui.Modal):
                     "I don't have permission to access that channel.",
                     emoji="⚠️",
                 ),
-                ephemeral=True,
             )
             return
         except Exception as e:
@@ -204,7 +198,6 @@ class CreateBoardModal(discord.ui.Modal):
                     "An error occurred while accessing the channel. Please try again.",
                     emoji="🔥",
                 ),
-                ephemeral=True,
             )
             return
 
