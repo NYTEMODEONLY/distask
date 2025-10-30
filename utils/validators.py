@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from dateutil import parser
@@ -49,11 +49,35 @@ class Validator:
     def parse_due_date(value: Optional[str]) -> Optional[str]:
         if not value:
             return None
-        dt = parser.parse(value)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        dt = dt.astimezone(timezone.utc)
-        if dt < datetime.now(timezone.utc):
+        
+        value_lower = value.strip().lower()
+        now = datetime.now(timezone.utc)
+        
+        # Handle preset strings (case-insensitive)
+        if value_lower == "today":
+            # End of today (23:59:59 UTC)
+            dt = now.replace(hour=23, minute=59, second=59, microsecond=0)
+        elif value_lower == "tomorrow":
+            # End of tomorrow (23:59:59 UTC)
+            dt = (now + timedelta(days=1)).replace(hour=23, minute=59, second=59, microsecond=0)
+        elif value_lower in ("3 days", "3 day"):
+            # 3 days from now at end of day
+            dt = (now + timedelta(days=3)).replace(hour=23, minute=59, second=59, microsecond=0)
+        elif value_lower in ("6 days", "6 day"):
+            # 6 days from now at end of day
+            dt = (now + timedelta(days=6)).replace(hour=23, minute=59, second=59, microsecond=0)
+        elif value_lower in ("7 days", "7 day"):
+            # 7 days from now at end of day
+            dt = (now + timedelta(days=7)).replace(hour=23, minute=59, second=59, microsecond=0)
+        else:
+            # Fall back to dateutil parser for manual date formats
+            dt = parser.parse(value)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.astimezone(timezone.utc)
+        
+        # Validate that date is in the future
+        if dt < now:
             raise ValueError("Due date must be in the future.")
         return dt.strftime(ISO_FORMAT)
 
