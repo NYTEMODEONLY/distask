@@ -147,6 +147,28 @@ def _calculate_task_status_color(task: Dict[str, Any]) -> discord.Color:
         return discord.Color.from_rgb(118, 75, 162)  # Default blue-purple
 
 
+def _format_assignees(task: Dict[str, Any]) -> str:
+    """Format assignees for display, supporting both single (backwards compat) and multiple assignees."""
+    # Check for new assignee_ids list first (preferred)
+    assignee_ids = task.get("assignee_ids")
+    if assignee_ids and isinstance(assignee_ids, list) and len(assignee_ids) > 0:
+        # Multiple assignees
+        mentions = [f"<@{user_id}>" for user_id in assignee_ids]
+        if len(mentions) == 1:
+            return f"👤 {mentions[0]}"
+        elif len(mentions) <= 3:
+            return f"👥 {', '.join(mentions)}"
+        else:
+            return f"👥 {', '.join(mentions[:3])} +{len(mentions) - 3} more"
+    
+    # Backwards compatibility: check legacy assignee_id
+    assignee_id = task.get("assignee_id")
+    if assignee_id:
+        return f"👤 <@{assignee_id}>"
+    
+    return "👤 Unassigned"
+
+
 class EmbedFactory:
     def __init__(self, color: Optional[discord.Color] = None) -> None:
         self.color = color or DEFAULT_COLOR
@@ -402,10 +424,13 @@ class EmbedFactory:
             inline=True,
         )
         
-        # Assignee with emoji
-        assignee_value = f"👤 <@{task['assignee_id']}>" if task.get("assignee_id") else "👤 Unassigned"
+        # Assignee(s) with emoji
+        assignee_value = _format_assignees(task)
+        assignee_ids = task.get("assignee_ids", [])
+        assignee_id = task.get("assignee_id")
+        is_multiple = (isinstance(assignee_ids, list) and len(assignee_ids) > 1) or (not assignee_ids and assignee_id)
         embed.add_field(
-            name="👥 Assignee",
+            name="👥 Assignee" + ("s" if is_multiple else ""),
             value=assignee_value,
             inline=True,
         )
@@ -490,8 +515,8 @@ class EmbedFactory:
             else:
                 value_parts.append("📅 **Due:** No due date")
             
-            # Assignee
-            assignee = f"👤 <@{task['assignee_id']}>" if task.get("assignee_id") else "👤 Unassigned"
+            # Assignee(s)
+            assignee = _format_assignees(task)
             value_parts.append(assignee)
             
             embed.add_field(
@@ -651,8 +676,8 @@ class EmbedFactory:
             else:
                 parts.append(f"📅 Due: {formatted_time} ({relative_time})")
         
-        # Assignee
-        assignee = f"👤 <@{task['assignee_id']}>" if task.get("assignee_id") else "👤 Unassigned"
+        # Assignee(s)
+        assignee = _format_assignees(task)
         parts.append(assignee)
         
         return "\n".join(parts)
