@@ -609,7 +609,24 @@ async def main() -> int:
     repo_name = os.getenv("REPO_NAME") or os.getenv("repo_name") or "distask"
     
     # Execute requested action
-    if args.suggest:
+    if args.show_completed:
+        db = None
+        if db_url:
+            db = Database(db_url)
+            try:
+                await db.init()
+                await show_completed_features(db, limit=10)
+            except Exception as e:
+                logger.error("Error showing completed features: %s", e)
+            finally:
+                if db:
+                    await db.close()
+        else:
+            logger.warning("No database URL provided; cannot load completed features")
+            await show_completed_features(None, limit=10)
+        return 0
+    
+    elif args.suggest:
         queue = parse_feature_queue()
         candidates = suggest_release_batch(queue, threshold, args.max_items)
         print_release_suggestion(candidates, threshold)
