@@ -119,6 +119,11 @@ Once code review is complete and tests pass:
    - `feature_requests.md` updated on GitHub
    - Commit hash and PR number stored in completion metadata
 
+4. **Branch cleanup** (automatic):
+   - **GitHub Actions**: Automatically deletes merged `feature/*` branches
+   - **Feature Agent**: Also attempts to delete branches when detecting completion
+   - Branches are cleaned up immediately after merge to keep repository tidy
+
 ### 7. Verification
 
 After merging, verify completion:
