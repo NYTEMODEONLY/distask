@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Callable, Optional
+from typing import TYPE_CHECKING, Callable, List, Optional
 
 import discord
 
@@ -237,8 +237,8 @@ class AddTaskFlowView(discord.ui.View):
         self.selected_board_name: Optional[str] = None
         self.selected_column_id: Optional[int] = None
         self.selected_column_name: Optional[str] = None
-        self.selected_assignee_id: Optional[int] = None
-        self.selected_assignee_name: Optional[str] = None
+        self.selected_assignee_ids: List[int] = []  # Support multiple assignees
+        self.selected_assignee_names: List[str] = []  # Support multiple assignee names
         self.selected_due_date_preset: Optional[str] = None
         self.current_step: int = 1  # 1=board, 2=column, 3=assignee, 4=due_date, 5=ready
 
@@ -258,11 +258,11 @@ class AddTaskFlowView(discord.ui.View):
         self.add_item(column_select)
         self.column_select = column_select
         
-        # Create user_select for assignee selection
+        # Create user_select for assignee selection (supports multiple users)
         user_select = discord.ui.UserSelect(
-            placeholder="3. Assign to user (optional)",
+            placeholder="3. Assign to user(s) (optional)",
             min_values=0,
-            max_values=1,
+            max_values=25,  # Discord limit; support multiple assignees
             disabled=True,
             row=2,
         )
@@ -362,7 +362,7 @@ class AddTaskFlowView(discord.ui.View):
         await interaction.response.edit_message(
             embed=self.embeds.message(
                 "Add Task",
-                f"Board: **{self.selected_board_name}**\nColumn: **{column_name}**\n\nOptionally assign to a user, then choose a due date preset.",
+                f"Board: **{self.selected_board_name}**\nColumn: **{column_name}**\n\nOptionally assign to one or more users, then choose a due date preset.",
                 emoji="➕",
             ),
             view=self,
@@ -370,15 +370,15 @@ class AddTaskFlowView(discord.ui.View):
 
     async def user_select_callback(self, interaction: discord.Interaction, select: discord.ui.UserSelect) -> None:
         # UserSelect callback receives both interaction and select component
-        # Get selected user from select.values (UserSelect returns User objects)
+        # Get selected users from select.values (UserSelect returns User objects)
         if not select.values:
-            # No user selected (min_values=0 allows this)
-            self.selected_assignee_id = None
-            self.selected_assignee_name = None
+            # No users selected (min_values=0 allows this)
+            self.selected_assignee_ids = []
+            self.selected_assignee_names = []
         else:
-            user = select.values[0]  # UserSelect returns User objects
-            self.selected_assignee_id = user.id
-            self.selected_assignee_name = user.display_name
+            # Support multiple users
+            self.selected_assignee_ids = [user.id for user in select.values]
+            self.selected_assignee_names = [user.display_name for user in select.values]
         
         self.current_step = 4
         
@@ -391,7 +391,15 @@ class AddTaskFlowView(discord.ui.View):
         if hasattr(self, 'continue_button'):
             self.continue_button.disabled = False
         
-        assignee_text = f"\nAssignee: **{self.selected_assignee_name}**" if self.selected_assignee_id else ""
+        # Format assignee text for display
+        if self.selected_assignee_ids:
+            if len(self.selected_assignee_names) == 1:
+                assignee_text = f"\nAssignee: **{self.selected_assignee_names[0]}**"
+            else:
+                assignee_text = f"\nAssignees: **{', '.join(self.selected_assignee_names[:3])}" + (f" +{len(self.selected_assignee_names) - 3} more**" if len(self.selected_assignee_names) > 3 else "**")
+        else:
+            assignee_text = ""
+        
         await interaction.response.edit_message(
             embed=self.embeds.message(
                 "Add Task",
@@ -422,7 +430,14 @@ class AddTaskFlowView(discord.ui.View):
             self.selected_due_date_preset = None
         
         preset_text = f"\nDue Date Preset: **{self.selected_due_date_preset}**" if self.selected_due_date_preset else ""
-        assignee_text = f"\nAssignee: **{self.selected_assignee_name}**" if self.selected_assignee_id else ""
+        # Format assignee text for display
+        if self.selected_assignee_ids:
+            if len(self.selected_assignee_names) == 1:
+                assignee_text = f"\nAssignee: **{self.selected_assignee_names[0]}**"
+            else:
+                assignee_text = f"\nAssignees: **{', '.join(self.selected_assignee_names[:3])}" + (f" +{len(self.selected_assignee_names) - 3} more**" if len(self.selected_assignee_names) > 3 else "**")
+        else:
+            assignee_text = ""
         await interaction.response.edit_message(
             embed=self.embeds.message(
                 "Add Task",
@@ -476,8 +491,8 @@ class AddTaskFlowView(discord.ui.View):
         elif self.current_step == 4:
             # Go back to user selection
             self.current_step = 3
-            self.selected_assignee_id = None
-            self.selected_assignee_name = None
+            self.selected_assignee_ids = []
+            self.selected_assignee_names = []
             self.board_select.disabled = True
             self.column_select.disabled = True
             self.user_select.disabled = False
@@ -491,7 +506,7 @@ class AddTaskFlowView(discord.ui.View):
             await interaction.response.edit_message(
                 embed=self.embeds.message(
                     "Add Task",
-                    f"Board: **{self.selected_board_name}**\nColumn: **{self.selected_column_name}**\n\nOptionally assign to a user, then choose a due date preset.",
+                    f"Board: **{self.selected_board_name}**\nColumn: **{self.selected_column_name}**\n\nOptionally assign to one or more users, then choose a due date preset.",
                     emoji="➕",
                 ),
                 view=self,
@@ -520,7 +535,7 @@ class AddTaskFlowView(discord.ui.View):
             column_name=self.selected_column_name,
             db=self.db,
             embeds=self.embeds,
-            assignee_id=self.selected_assignee_id,
+            assignee_ids=self.selected_assignee_ids,  # Pass multiple assignees
             due_date_preset=self.selected_due_date_preset,
         )
         await interaction.response.send_modal(modal)

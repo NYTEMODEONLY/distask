@@ -75,6 +75,16 @@ class Database:
                     completed BOOLEAN NOT NULL DEFAULT FALSE
                 )
                 """,
+                """
+                CREATE TABLE IF NOT EXISTS task_assignees (
+                    task_id BIGINT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                    user_id BIGINT NOT NULL,
+                    assigned_at TEXT NOT NULL,
+                    PRIMARY KEY (task_id, user_id)
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_task_assignees_task ON task_assignees(task_id)",
+                "CREATE INDEX IF NOT EXISTS idx_task_assignees_user ON task_assignees(user_id)",
                 "CREATE INDEX IF NOT EXISTS idx_tasks_board ON tasks(board_id)",
                 "CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(due_date)",
                 """
@@ -113,6 +123,17 @@ class Database:
                 "ALTER TABLE feature_requests ADD COLUMN IF NOT EXISTS community_upvotes INTEGER NOT NULL DEFAULT 0",
                 "ALTER TABLE feature_requests ADD COLUMN IF NOT EXISTS community_downvotes INTEGER NOT NULL DEFAULT 0",
                 "ALTER TABLE feature_requests ADD COLUMN IF NOT EXISTS community_duplicate_votes INTEGER NOT NULL DEFAULT 0",
+                # Migrate existing assignee_id values to task_assignees table (one-time migration)
+                """
+                INSERT INTO task_assignees (task_id, user_id, assigned_at)
+                SELECT id, assignee_id, created_at
+                FROM tasks
+                WHERE assignee_id IS NOT NULL
+                  AND NOT EXISTS (
+                      SELECT 1 FROM task_assignees ta WHERE ta.task_id = tasks.id AND ta.user_id = tasks.assignee_id
+                  )
+                ON CONFLICT (task_id, user_id) DO NOTHING
+                """,
             ]
             for statement in schema_statements:
                 await conn.execute(statement)
@@ -268,7 +289,9 @@ class Database:
         assignee_id: Optional[int],
         due_date: Optional[str],
         created_by: int,
+        assignee_ids: Optional[List[int]] = None,
     ) -> int:
+        """Create a task with optional single assignee (for backwards compat) or multiple assignees."""
         task_row = await self._execute(
             """
             INSERT INTO tasks (board_id, column_id, title, description, assignee_id, due_date, created_by, created_at)
@@ -280,7 +303,16 @@ class Database:
         )
         if not task_row:
             raise RuntimeError("Failed to create task")
-        return task_row["id"]
+        task_id = task_row["id"]
+        
+        # Handle multiple assignees (preferred method)
+        if assignee_ids:
+            await self.add_task_assignees(task_id, assignee_ids)
+        # Backwards compatibility: if single assignee_id provided, add to task_assignees too
+        elif assignee_id:
+            await self.add_task_assignees(task_id, [assignee_id])
+        
+        return task_id
 
     async def fetch_tasks(
         self,
@@ -290,27 +322,74 @@ class Database:
         assignee_id: Optional[int] = None,
         include_completed: bool = True,
     ) -> List[Dict[str, Any]]:
-        query = ["SELECT * FROM tasks WHERE board_id = $1"]
+        """Fetch tasks, optionally filtered by column or assignee. Returns tasks with assignee_ids list."""
+        query = [
+            """
+            SELECT t.*, 
+                   COALESCE(
+                       json_agg(DISTINCT ta.user_id) FILTER (WHERE ta.user_id IS NOT NULL),
+                       '[]'::json
+                   ) as assignee_ids
+            FROM tasks t
+            LEFT JOIN task_assignees ta ON t.id = ta.task_id
+            WHERE t.board_id = $1
+            """
+        ]
         params: List[Any] = [board_id]
         if column_id is not None:
             params.append(column_id)
-            query.append(f"AND column_id = ${len(params)}")
+            query.append(f"AND t.column_id = ${len(params)}")
         if assignee_id is not None:
+            # Filter by assignee: either in old assignee_id column OR in task_assignees table
             params.append(assignee_id)
-            query.append(f"AND assignee_id = ${len(params)}")
+            query.append(f"AND (t.assignee_id = ${len(params)} OR EXISTS (SELECT 1 FROM task_assignees ta WHERE ta.task_id = t.id AND ta.user_id = ${len(params)}))")
         if not include_completed:
-            query.append("AND completed = FALSE")
-        query.append("ORDER BY created_at DESC")
+            query.append("AND t.completed = FALSE")
+        query.append("GROUP BY t.id ORDER BY t.created_at DESC")
         rows = await self._execute(" ".join(query), tuple(params), fetchall=True)
-        return [dict(row) for row in rows or []]
+        tasks = []
+        for row in rows or []:
+            task_dict = dict(row)
+            # Convert JSON array to Python list
+            if isinstance(task_dict.get("assignee_ids"), list):
+                task_dict["assignee_ids"] = task_dict["assignee_ids"]
+            elif task_dict.get("assignee_ids"):
+                import json
+                task_dict["assignee_ids"] = json.loads(task_dict["assignee_ids"]) if isinstance(task_dict["assignee_ids"], str) else []
+            else:
+                task_dict["assignee_ids"] = []
+            tasks.append(task_dict)
+        return tasks
 
     async def fetch_task(self, task_id: int) -> Optional[Dict[str, Any]]:
+        """Fetch a single task with its assignee_ids list."""
         row = await self._execute(
-            "SELECT * FROM tasks WHERE id = $1",
+            """
+            SELECT t.*,
+                   COALESCE(
+                       json_agg(DISTINCT ta.user_id) FILTER (WHERE ta.user_id IS NOT NULL),
+                       '[]'::json
+                   ) as assignee_ids
+            FROM tasks t
+            LEFT JOIN task_assignees ta ON t.id = ta.task_id
+            WHERE t.id = $1
+            GROUP BY t.id
+            """,
             (task_id,),
             fetchone=True,
         )
-        return dict(row) if row else None
+        if not row:
+            return None
+        task_dict = dict(row)
+        # Convert JSON array to Python list
+        if isinstance(task_dict.get("assignee_ids"), list):
+            task_dict["assignee_ids"] = task_dict["assignee_ids"]
+        elif task_dict.get("assignee_ids"):
+            import json
+            task_dict["assignee_ids"] = json.loads(task_dict["assignee_ids"]) if isinstance(task_dict["assignee_ids"], str) else []
+        else:
+            task_dict["assignee_ids"] = []
+        return task_dict
 
     async def update_task(self, task_id: int, **fields: Any) -> bool:
         if not fields:
@@ -335,26 +414,133 @@ class Database:
             rowcount=True,
         )
         return bool(result)
+    
+    # Multiple assignees management methods
+    async def add_task_assignees(self, task_id: int, user_ids: List[int]) -> None:
+        """Add one or more assignees to a task."""
+        if not user_ids:
+            return
+        now = _utcnow()
+        for user_id in user_ids:
+            await self._execute(
+                """
+                INSERT INTO task_assignees (task_id, user_id, assigned_at)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (task_id, user_id) DO NOTHING
+                """,
+                (task_id, user_id, now),
+            )
+        # Also update legacy assignee_id field for backwards compatibility (use first assignee)
+        existing = await self._execute(
+            "SELECT assignee_id FROM tasks WHERE id = $1",
+            (task_id,),
+            fetchone=True,
+        )
+        if existing and not existing.get("assignee_id"):
+            await self._execute(
+                "UPDATE tasks SET assignee_id = $1 WHERE id = $2",
+                (user_ids[0], task_id),
+            )
+    
+    async def remove_task_assignees(self, task_id: int, user_ids: List[int]) -> None:
+        """Remove one or more assignees from a task."""
+        if not user_ids:
+            return
+        await self._execute(
+            "DELETE FROM task_assignees WHERE task_id = $1 AND user_id = ANY($2::bigint[])",
+            (task_id, user_ids),
+        )
+        # Update legacy assignee_id if we removed the last assignee or the one in assignee_id
+        remaining = await self._execute(
+            "SELECT user_id FROM task_assignees WHERE task_id = $1 ORDER BY assigned_at LIMIT 1",
+            (task_id,),
+            fetchone=True,
+        )
+        if remaining:
+            await self._execute(
+                "UPDATE tasks SET assignee_id = $1 WHERE id = $2",
+                (remaining["user_id"], task_id),
+            )
+        else:
+            await self._execute(
+                "UPDATE tasks SET assignee_id = NULL WHERE id = $1",
+                (task_id,),
+            )
+    
+    async def set_task_assignees(self, task_id: int, user_ids: List[int]) -> None:
+        """Replace all assignees for a task with the given list."""
+        # Update legacy assignee_id FIRST to keep it in sync
+        # This ensures backwards compatibility even if add_task_assignees doesn't update it
+        if user_ids:
+            await self._execute(
+                "UPDATE tasks SET assignee_id = $1 WHERE id = $2",
+                (user_ids[0], task_id),
+            )
+        else:
+            await self._execute(
+                "UPDATE tasks SET assignee_id = NULL WHERE id = $1",
+                (task_id,),
+            )
+        
+        # Remove all existing assignees
+        await self._execute(
+            "DELETE FROM task_assignees WHERE task_id = $1",
+            (task_id,),
+        )
+        
+        # Add new assignees
+        if user_ids:
+            await self.add_task_assignees(task_id, user_ids)
+    
+    async def get_task_assignees(self, task_id: int) -> List[int]:
+        """Get list of user IDs assigned to a task."""
+        rows = await self._execute(
+            "SELECT user_id FROM task_assignees WHERE task_id = $1 ORDER BY assigned_at",
+            (task_id,),
+            fetchall=True,
+        )
+        return [row["user_id"] for row in rows or []]
 
     async def search_tasks(self, guild_id: int, query: str) -> List[Dict[str, Any]]:
+        """Search tasks with assignee_ids included."""
         like = f"%{query}%"
         rows = await self._execute(
             """
-            SELECT tasks.*, boards.name AS board_name, boards.channel_id
-            FROM tasks
-            JOIN boards ON tasks.board_id = boards.id
+            SELECT t.*, 
+                   boards.name AS board_name, 
+                   boards.channel_id,
+                   COALESCE(
+                       json_agg(DISTINCT ta.user_id) FILTER (WHERE ta.user_id IS NOT NULL),
+                       '[]'::json
+                   ) as assignee_ids
+            FROM tasks t
+            JOIN boards ON t.board_id = boards.id
+            LEFT JOIN task_assignees ta ON t.id = ta.task_id
             WHERE boards.guild_id = $1
               AND (
-                  tasks.title ILIKE $2 OR
-                  COALESCE(tasks.description, '') ILIKE $3
+                  t.title ILIKE $2 OR
+                  COALESCE(t.description, '') ILIKE $3
               )
-            ORDER BY tasks.created_at DESC
+            GROUP BY t.id, boards.name, boards.channel_id
+            ORDER BY t.created_at DESC
             LIMIT 25
             """,
             (guild_id, like, like),
             fetchall=True,
         )
-        return [dict(row) for row in rows or []]
+        tasks = []
+        for row in rows or []:
+            task_dict = dict(row)
+            # Convert JSON array to Python list
+            if isinstance(task_dict.get("assignee_ids"), list):
+                task_dict["assignee_ids"] = task_dict["assignee_ids"]
+            elif task_dict.get("assignee_ids"):
+                import json
+                task_dict["assignee_ids"] = json.loads(task_dict["assignee_ids"]) if isinstance(task_dict["assignee_ids"], str) else []
+            else:
+                task_dict["assignee_ids"] = []
+            tasks.append(task_dict)
+        return tasks
 
     async def board_stats(self, board_id: int) -> Dict[str, Any]:
         totals = await self._execute(
@@ -448,18 +634,40 @@ class Database:
         }
 
     async def fetch_due_tasks(self, before_iso: str) -> List[Dict[str, Any]]:
+        """Fetch due tasks with assignee_ids for reminders."""
         rows = await self._execute(
             """
-            SELECT tasks.*, boards.name AS board_name, boards.channel_id, boards.guild_id
-            FROM tasks
-            JOIN boards ON tasks.board_id = boards.id
-            WHERE tasks.completed = FALSE AND tasks.due_date IS NOT NULL AND tasks.due_date <= $1
-            ORDER BY tasks.due_date ASC
+            SELECT t.*, 
+                   boards.name AS board_name, 
+                   boards.channel_id, 
+                   boards.guild_id,
+                   COALESCE(
+                       json_agg(DISTINCT ta.user_id) FILTER (WHERE ta.user_id IS NOT NULL),
+                       '[]'::json
+                   ) as assignee_ids
+            FROM tasks t
+            JOIN boards ON t.board_id = boards.id
+            LEFT JOIN task_assignees ta ON t.id = ta.task_id
+            WHERE t.completed = FALSE AND t.due_date IS NOT NULL AND t.due_date <= $1
+            GROUP BY t.id, boards.name, boards.channel_id, boards.guild_id
+            ORDER BY t.due_date ASC
             """,
             (before_iso,),
             fetchall=True,
         )
-        return [dict(row) for row in rows or []]
+        tasks = []
+        for row in rows or []:
+            task_dict = dict(row)
+            # Convert JSON array to Python list
+            if isinstance(task_dict.get("assignee_ids"), list):
+                task_dict["assignee_ids"] = task_dict["assignee_ids"]
+            elif task_dict.get("assignee_ids"):
+                import json
+                task_dict["assignee_ids"] = json.loads(task_dict["assignee_ids"]) if isinstance(task_dict["assignee_ids"], str) else []
+            else:
+                task_dict["assignee_ids"] = []
+            tasks.append(task_dict)
+        return tasks
 
     async def _add_default_columns(self, board_id: int) -> None:
         defaults = ["To Do", "In Progress", "Done"]
