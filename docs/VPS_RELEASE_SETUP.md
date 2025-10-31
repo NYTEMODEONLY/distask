@@ -8,7 +8,10 @@ Complete guide for using the rapid release flow on your VPS.
 
 ```bash
 ssh root@YOUR_VPS_IP
+# Enter your VPS password when prompted
 ```
+
+**⚠️ SECURITY NOTE:** Never commit passwords or credentials to git. Use SSH keys or environment variables instead.
 
 ### 2. Navigate to Project
 
