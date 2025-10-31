@@ -46,23 +46,24 @@ passwd root
 - If repository is private, review collaborator access
 - Consider using GitHub's secret scanning alerts
 
-### 4. Remove from Git History (Optional but Recommended)
-**Warning:** This rewrites git history and requires force push. Coordinate with team first.
+### 4. Remove from Git History ✅ COMPLETED
+**Status:** Credentials have been removed from git history.
 
-```bash
-# Option 1: Use BFG Repo-Cleaner (recommended)
-# Download: https://rtyley.github.io/bfg-repo-cleaner/
-bfg --replace-text passwords.txt
+**Actions Taken:**
+- Used `git filter-branch` to rewrite entire git history
+- Removed credentials from all commits containing `QUICK_START_RELEASE.md` and `docs/VPS_RELEASE_SETUP.md`
+- Cleaned git reflog and garbage collected
+- Force pushed cleaned history to remote repository
 
-# Option 2: Use git filter-branch
-git filter-branch --force --index-filter \
-  "git rm --cached --ignore-unmatch QUICK_START_RELEASE.md docs/VPS_RELEASE_SETUP.md" \
-  --prune-empty --tag-name-filter cat -- --all
+**Verification:**
+- ✅ No credentials found in current git history
+- ✅ All branches updated
+- ✅ Remote repository cleaned
 
-# After cleaning history:
-git push origin --force --all
-git push origin --force --tags
-```
+**Note:** The git history has been rewritten. Anyone who has cloned the repository should:
+1. Delete their local clone
+2. Re-clone from the cleaned repository
+3. Or run: `git fetch origin && git reset --hard origin/main`
 
 ## 🔍 Security Audit Results
 
