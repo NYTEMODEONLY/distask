@@ -1,6 +1,19 @@
 # Rapid Release Flow Guide
 
-This guide explains how to use DisTask's rapid release system for score-based, validated releases.
+Complete guide for using DisTask's rapid release system for score-based, validated releases.
+
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Quick Start](#quick-start)
+3. [Prerequisites](#prerequisites)
+4. [Detailed Workflow](#detailed-workflow)
+5. [CLI Reference](#cli-reference)
+6. [VPS Usage](#vps-usage)
+7. [Troubleshooting](#troubleshooting)
+8. [Best Practices](#best-practices)
+
+---
 
 ## Overview
 
@@ -10,16 +23,11 @@ The rapid release flow provides a "wake up and ship" process that:
 - Automates versioning, changelog, and GitHub releases
 - Integrates seamlessly with the existing PR-first workflow
 
-## Prerequisites
-
-1. **Feature Queue Generated**: Run `feature_agent.py` to generate `automation/feature_queue.json`
-2. **Environment Configured**: Set `RELEASE_THRESHOLD` in `.env` (default: 80.0)
-3. **GitHub Credentials**: `GITHUB_TOKEN`, `REPO_OWNER`, `REPO_NAME` in `.env` (for releases)
-4. **Database Access**: `DATABASE_URL` in `.env` (optional, for full feature details)
+---
 
 ## Quick Start
 
-### 1. Suggest Release Batch
+### Step 1: Suggest Release Batch
 
 See what features are ready for release:
 
@@ -27,61 +35,69 @@ See what features are ready for release:
 python scripts/release_helper.py --suggest --threshold 80
 ```
 
-Output shows:
-- Feature IDs and titles
-- Scores (priority + ease + votes - penalties)
-- Rationale for selection
-- Number of features suggested
+**This shows you:**
+- Which features have scores ≥ 80
+- Why they were selected (high priority, easy, community votes)
+- How many features are ready
 
-### 2. Validate Everything
-
-Before any release, validate code quality:
+### Step 2: Validate Before Release
 
 ```bash
 python scripts/release_helper.py --validate
 ```
 
-This checks:
-- Code formatting (black)
-- Code style (flake8)
-- Type hints (mypy, non-blocking)
-- Tests (pytest, if tests exist)
-- Git state (clean working tree)
-- Feature queue consistency
-- Database schema compatibility
+**Checks:**
+- ✅ Code formatting
+- ✅ Code style  
+- ✅ Tests (if any)
+- ✅ Git state
+- ✅ Feature queue consistency
 
-### 3. Full Release Cycle (Dry Run)
-
-Simulate a complete release without making changes:
+### Step 3: Dry-Run First (Always!)
 
 ```bash
 python scripts/release_helper.py --full-cycle --dry-run --threshold 80
 ```
 
-This shows what would happen:
-- Features selected
-- Version bump
-- Changelog generation
-- Git tag creation
-- GitHub release creation
+**Shows you:**
+- What version will be created
+- What changelog will be generated
+- What git tag will be created
+- What GitHub release will be made
 
-### 4. Execute Release
+**DOESN'T MAKE ANY CHANGES** - safe to run anytime!
 
-After validation passes and dry-run looks good:
+### Step 4: Execute Release
 
 ```bash
 python scripts/release_helper.py --full-cycle --yes --auto-select --threshold 80
 ```
 
-This:
-- Selects top-scoring features automatically
-- Skips confirmation prompts (use `--yes`)
-- Validates before proceeding
-- Bumps version
-- Creates changelog
-- Creates git tag
-- Creates GitHub release
-- Marks features as shipped
+**This:**
+- ✅ Selects top-scoring features automatically
+- ✅ Validates everything first
+- ✅ Bumps version (e.g., 1.0.0 → 1.1.0)
+- ✅ Generates changelog
+- ✅ Creates git tag
+- ✅ Creates GitHub release
+- ✅ Marks features as shipped
+
+### Step 5: Restart Services (If Needed)
+
+```bash
+sudo systemctl restart distask.service distask-web.service
+```
+
+---
+
+## Prerequisites
+
+1. **Feature Queue Generated**: Run `feature_agent.py` to generate `automation/feature_queue.json`
+2. **Environment Configured**: Set `RELEASE_THRESHOLD` in `.env` (default: 80.0)
+3. **GitHub Credentials**: `GITHUB_TOKEN`, `REPO_OWNER`, `REPO_NAME` in `.env` (for releases)
+4. **Database Access**: `DATABASE_URL` in `.env` (optional, for full feature details)
+
+---
 
 ## Detailed Workflow
 
@@ -169,6 +185,8 @@ If GitHub credentials are configured:
 
 Features are logged as shipped (doesn't mark as `completed` - that's for implementation).
 
+---
+
 ## Integration with PR-First Workflow
 
 The release helper integrates with the existing PR-first workflow:
@@ -211,6 +229,8 @@ python scripts/release_helper.py --full-cycle --yes --auto-select
 2. **Verify**: Check GitHub release and changelog
 
 3. **Next Cycle**: Feature agent runs nightly, updates queue
+
+---
 
 ## CLI Reference
 
@@ -255,6 +275,93 @@ python scripts/release_helper.py --full-cycle [OPTIONS]
 - `--bump-type`: Version bump type (`major`/`minor`/`patch`, default: `minor`)
 - `--db-url`: Database URL
 - `--skip-tests`: Skip tests
+
+### `--show-completed`
+
+Show recently completed features:
+
+```bash
+python scripts/release_helper.py --show-completed [--limit 10]
+```
+
+---
+
+## VPS Usage
+
+### Connect to VPS
+
+```bash
+ssh root@YOUR_VPS_IP
+# Or use SSH key: ssh -i ~/.ssh/distask_vps root@YOUR_VPS_IP
+```
+
+**⚠️ SECURITY NOTE:** Never commit passwords or credentials to git. Use SSH keys or environment variables instead.
+
+### Navigate & Activate
+
+```bash
+cd /root/distask
+source .venv/bin/activate
+```
+
+### Pull Latest Code
+
+```bash
+git pull origin main
+```
+
+### Environment Configuration
+
+Add to `/root/distask/.env`:
+
+```env
+# Release threshold (default: 80.0)
+RELEASE_THRESHOLD=80.0
+
+# GitHub credentials (for releases)
+GITHUB_TOKEN=ghp_your_token_here
+REPO_OWNER=NYTEMODEONLY
+REPO_NAME=distask
+
+# Database (for schema validation)
+DATABASE_URL=postgresql://user:password@localhost:5432/distask
+```
+
+### Common Workflows
+
+#### Daily Check: What's Ready to Release?
+
+```bash
+cd /root/distask
+source .venv/bin/activate
+python scripts/release_helper.py --suggest --threshold 80
+```
+
+#### Before Release: Validate Everything
+
+```bash
+cd /root/distask
+source .venv/bin/activate
+python scripts/release_helper.py --validate
+```
+
+#### Release Process
+
+```bash
+cd /root/distask
+source .venv/bin/activate
+
+# 1. Dry-run first
+python scripts/release_helper.py --full-cycle --dry-run --threshold 80
+
+# 2. Review output, then execute
+python scripts/release_helper.py --full-cycle --yes --auto-select --threshold 80
+
+# 3. Restart services (if needed)
+sudo systemctl restart distask.service distask-web.service
+```
+
+---
 
 ## Examples
 
@@ -302,6 +409,8 @@ python scripts/release_helper.py --validate --db-url postgresql://user:pass@host
 # Skip tests during validation
 python scripts/release_helper.py --validate --skip-tests
 ```
+
+---
 
 ## Troubleshooting
 
@@ -352,6 +461,8 @@ python scripts/release_helper.py --validate --skip-tests
 2. Check connection: `psql $DATABASE_URL -c "SELECT 1"`
 3. Non-blocking: Schema check warnings don't block release
 
+---
+
 ## Best Practices
 
 1. **Always Dry-Run First**: Test with `--dry-run` before executing
@@ -361,6 +472,35 @@ python scripts/release_helper.py --validate --skip-tests
 5. **Use PR-First**: Implement features via PRs before releasing
 6. **Test Locally**: Test release helper in dev environment first
 7. **Monitor Services**: Check service health after release
+
+---
+
+## Common Commands Cheat Sheet
+
+```bash
+# 1. Check what's ready
+python scripts/release_helper.py --suggest --threshold 80
+
+# 2. Validate
+python scripts/release_helper.py --validate
+
+# 3. Dry-run
+python scripts/release_helper.py --full-cycle --dry-run --threshold 80
+
+# 4. Release
+python scripts/release_helper.py --full-cycle --yes --auto-select --threshold 80
+
+# 5. Check version
+cat VERSION
+
+# 6. View changelog
+cat CHANGELOG.md
+
+# 7. Show completed features
+python scripts/release_helper.py --show-completed
+```
+
+---
 
 ## AI-Assisted Implementation
 
@@ -373,10 +513,12 @@ Use `docs/release_prompt_templates.md` for AI-assisted feature implementation:
 5. **Review**: Use code review template
 6. **Validate**: Run `--validate` before committing
 
+---
+
 ## Related Documentation
 
 - `docs/FEATURE_REQUEST_WORKFLOW.md`: PR-first implementation workflow
 - `docs/release_prompt_templates.md`: AI/IDE prompt templates
+- `docs/VPS_SETUP.md`: Complete VPS setup guide
 - `README.md`: General project overview
 - `CLAUDE.md`: Development guidelines
-
