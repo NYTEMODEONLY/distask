@@ -22,6 +22,7 @@ from .views import (
     DeleteTaskConfirmationView,
     EditTaskFlowView,
     NotificationToggleView,
+    PastDueDateConfirmationView,
     RemoveColumnConfirmationView,
     TaskActionsView,
 )
@@ -43,6 +44,7 @@ __all__ = [
     "EditTaskModal",
     "MoveTaskModal",
     "NotificationToggleView",
+    "PastDueDateConfirmationView",
     "RemoveColumnConfirmationView",
     "ReminderTimeModal",
     "SearchTaskModal",
