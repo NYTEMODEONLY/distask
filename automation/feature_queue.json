@@ -1,87 +1,9 @@
 {
-  "generated_at": "2025-10-28T08:30:09Z",
+  "generated_at": "2025-10-31T21:23:49Z",
   "items": [
-    {
-      "id": 1,
-      "title": "Duplicate requests",
-      "score": 10.0,
-      "priority": 5.0,
-      "ease": 5.0,
-      "status": "pending",
-      "duplicate_of": null,
-      "votes": {
-        "up": 0,
-        "down": 0,
-        "duplicate": 0,
-        "net": 0
-      },
-      "components": {
-        "priority": 5.0,
-        "ease": 5.0,
-        "vote_bonus": 0.0,
-        "duplicate_penalty": 0.0,
-        "net_votes": 0.0,
-        "upvotes": 0.0,
-        "downvotes": 0.0,
-        "dup_votes": 0.0
-      },
-      "notes": null
-    },
-    {
-      "id": 3,
-      "title": "Separate commands by global/local/other",
-      "score": 10.0,
-      "priority": 5.0,
-      "ease": 5.0,
-      "status": "pending",
-      "duplicate_of": null,
-      "votes": {
-        "up": 0,
-        "down": 0,
-        "duplicate": 0,
-        "net": 0
-      },
-      "components": {
-        "priority": 5.0,
-        "ease": 5.0,
-        "vote_bonus": 0.0,
-        "duplicate_penalty": 0.0,
-        "net_votes": 0.0,
-        "upvotes": 0.0,
-        "downvotes": 0.0,
-        "dup_votes": 0.0
-      },
-      "notes": null
-    },
     {
       "id": 4,
       "title": "Separate boards and tasks between channel/server",
-      "score": 10.0,
-      "priority": 5.0,
-      "ease": 5.0,
-      "status": "pending",
-      "duplicate_of": null,
-      "votes": {
-        "up": 0,
-        "down": 0,
-        "duplicate": 0,
-        "net": 0
-      },
-      "components": {
-        "priority": 5.0,
-        "ease": 5.0,
-        "vote_bonus": 0.0,
-        "duplicate_penalty": 0.0,
-        "net_votes": 0.0,
-        "upvotes": 0.0,
-        "downvotes": 0.0,
-        "dup_votes": 0.0
-      },
-      "notes": null
-    },
-    {
-      "id": 5,
-      "title": "Board Checks before deletion",
       "score": 10.0,
       "priority": 5.0,
       "ease": 5.0,
@@ -186,6 +108,188 @@
     {
       "id": 9,
       "title": "React to self assign a task",
+      "score": 10.0,
+      "priority": 5.0,
+      "ease": 5.0,
+      "status": "pending",
+      "duplicate_of": null,
+      "votes": {
+        "up": 0,
+        "down": 0,
+        "duplicate": 0,
+        "net": 0
+      },
+      "components": {
+        "priority": 5.0,
+        "ease": 5.0,
+        "vote_bonus": 0.0,
+        "duplicate_penalty": 0.0,
+        "net_votes": 0.0,
+        "upvotes": 0.0,
+        "downvotes": 0.0,
+        "dup_votes": 0.0
+      },
+      "notes": null
+    },
+    {
+      "id": 10,
+      "title": "Task Completion",
+      "score": 10.0,
+      "priority": 5.0,
+      "ease": 5.0,
+      "status": "pending",
+      "duplicate_of": null,
+      "votes": {
+        "up": 0,
+        "down": 0,
+        "duplicate": 0,
+        "net": 0
+      },
+      "components": {
+        "priority": 5.0,
+        "ease": 5.0,
+        "vote_bonus": 0.0,
+        "duplicate_penalty": 0.0,
+        "net_votes": 0.0,
+        "upvotes": 0.0,
+        "downvotes": 0.0,
+        "dup_votes": 0.0
+      },
+      "notes": null
+    },
+    {
+      "id": 11,
+      "title": "Task Completion Notes",
+      "score": 10.0,
+      "priority": 5.0,
+      "ease": 5.0,
+      "status": "pending",
+      "duplicate_of": null,
+      "votes": {
+        "up": 0,
+        "down": 0,
+        "duplicate": 0,
+        "net": 0
+      },
+      "components": {
+        "priority": 5.0,
+        "ease": 5.0,
+        "vote_bonus": 0.0,
+        "duplicate_penalty": 0.0,
+        "net_votes": 0.0,
+        "upvotes": 0.0,
+        "downvotes": 0.0,
+        "dup_votes": 0.0
+      },
+      "notes": null
+    },
+    {
+      "id": 13,
+      "title": "Version and release notes",
+      "score": 10.0,
+      "priority": 5.0,
+      "ease": 5.0,
+      "status": "pending",
+      "duplicate_of": null,
+      "votes": {
+        "up": 0,
+        "down": 0,
+        "duplicate": 0,
+        "net": 0
+      },
+      "components": {
+        "priority": 5.0,
+        "ease": 5.0,
+        "vote_bonus": 0.0,
+        "duplicate_penalty": 0.0,
+        "net_votes": 0.0,
+        "upvotes": 0.0,
+        "downvotes": 0.0,
+        "dup_votes": 0.0
+      },
+      "notes": null
+    },
+    {
+      "id": 14,
+      "title": "Tip the creator",
+      "score": 10.0,
+      "priority": 5.0,
+      "ease": 5.0,
+      "status": "pending",
+      "duplicate_of": null,
+      "votes": {
+        "up": 0,
+        "down": 0,
+        "duplicate": 0,
+        "net": 0
+      },
+      "components": {
+        "priority": 5.0,
+        "ease": 5.0,
+        "vote_bonus": 0.0,
+        "duplicate_penalty": 0.0,
+        "net_votes": 0.0,
+        "upvotes": 0.0,
+        "downvotes": 0.0,
+        "dup_votes": 0.0
+      },
+      "notes": null
+    },
+    {
+      "id": 15,
+      "title": "Add rewards for completing a task",
+      "score": 10.0,
+      "priority": 5.0,
+      "ease": 5.0,
+      "status": "pending",
+      "duplicate_of": null,
+      "votes": {
+        "up": 0,
+        "down": 0,
+        "duplicate": 0,
+        "net": 0
+      },
+      "components": {
+        "priority": 5.0,
+        "ease": 5.0,
+        "vote_bonus": 0.0,
+        "duplicate_penalty": 0.0,
+        "net_votes": 0.0,
+        "upvotes": 0.0,
+        "downvotes": 0.0,
+        "dup_votes": 0.0
+      },
+      "notes": null
+    },
+    {
+      "id": 16,
+      "title": "recover deleted tasks",
+      "score": 10.0,
+      "priority": 5.0,
+      "ease": 5.0,
+      "status": "pending",
+      "duplicate_of": null,
+      "votes": {
+        "up": 0,
+        "down": 0,
+        "duplicate": 0,
+        "net": 0
+      },
+      "components": {
+        "priority": 5.0,
+        "ease": 5.0,
+        "vote_bonus": 0.0,
+        "duplicate_penalty": 0.0,
+        "net_votes": 0.0,
+        "upvotes": 0.0,
+        "downvotes": 0.0,
+        "dup_votes": 0.0
+      },
+      "notes": null
+    },
+    {
+      "id": 18,
+      "title": "Editing due date",
       "score": 10.0,
       "priority": 5.0,
       "ease": 5.0,
