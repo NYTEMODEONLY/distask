@@ -46,7 +46,20 @@ class Validator:
         return ValidationResult(True)
 
     @staticmethod
-    def parse_due_date(value: Optional[str]) -> Optional[str]:
+    def parse_due_date(value: Optional[str], allow_past: bool = False) -> Optional[str]:
+        """
+        Parse a due date string into ISO format.
+        
+        Args:
+            value: Date string (preset like "Today" or ISO format)
+            allow_past: If True, allow dates in the past (for editing). Default False.
+        
+        Returns:
+            ISO formatted date string, or None if value is empty
+        
+        Raises:
+            ValueError: If date format is invalid or (if allow_past=False) date is in the past
+        """
         if not value:
             return None
         
@@ -76,10 +89,30 @@ class Validator:
                 dt = dt.replace(tzinfo=timezone.utc)
             dt = dt.astimezone(timezone.utc)
         
-        # Validate that date is in the future
-        if dt < now:
+        # Validate that date is in the future (unless allow_past=True)
+        if not allow_past and dt < now:
             raise ValueError("Due date must be in the future.")
         return dt.strftime(ISO_FORMAT)
+    
+    @staticmethod
+    def is_past_date(iso_date_str: Optional[str]) -> bool:
+        """
+        Check if an ISO date string is in the past.
+        
+        Args:
+            iso_date_str: ISO formatted date string
+        
+        Returns:
+            True if date is in the past, False otherwise
+        """
+        if not iso_date_str:
+            return False
+        try:
+            dt = datetime.strptime(iso_date_str, ISO_FORMAT)
+            dt = dt.replace(tzinfo=timezone.utc)
+            return dt < datetime.now(timezone.utc)
+        except (ValueError, TypeError):
+            return False
 
     @staticmethod
     def search_query(term: str) -> ValidationResult:

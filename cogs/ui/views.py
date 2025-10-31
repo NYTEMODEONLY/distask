@@ -1132,3 +1132,54 @@ class DeleteTaskConfirmationView(discord.ui.View):
         await interaction.followup.send(
             embed=self.embeds.message("Task Deleted", f"Removed task #{self.task_id}.", emoji="🗑️"),
         )
+
+
+class PastDueDateConfirmationView(discord.ui.View):
+    """View with confirmation buttons for editing a task to a past due date."""
+
+    def __init__(
+        self,
+        *,
+        task_id: int,
+        updates: dict,
+        assignee_ids_to_set: Optional[List[int]],
+        db: "Database",
+        embeds: "EmbedFactory",
+        past_date_str: str,
+        timeout: float = 180.0,
+    ) -> None:
+        super().__init__(timeout=timeout)
+        self.task_id = task_id
+        self.updates = updates
+        self.assignee_ids_to_set = assignee_ids_to_set
+        self.db = db
+        self.embeds = embeds
+        self.past_date_str = past_date_str
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary, custom_id="cancel")
+    async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        await interaction.response.send_message(
+            embed=self.embeds.message("Cancelled", "Task update cancelled.", emoji="✅"),
+        )
+        self.stop()
+
+    @discord.ui.button(label="Yes, Continue", style=discord.ButtonStyle.danger, custom_id="confirm")
+    async def confirm_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        await interaction.response.defer(thinking=True)
+        
+        # Apply assignee changes (if any)
+        if self.assignee_ids_to_set is not None:
+            await self.db.set_task_assignees(self.task_id, self.assignee_ids_to_set)
+        
+        # Apply other field updates
+        if self.updates:
+            await self.db.update_task(self.task_id, **self.updates)
+        
+        await interaction.followup.send(
+            embed=self.embeds.message(
+                "Task Updated",
+                f"Edits applied to task #{self.task_id}.\n⚠️ **Note:** Due date is in the past.",
+                emoji="✨",
+            ),
+        )
+        self.stop()
