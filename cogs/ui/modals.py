@@ -983,8 +983,8 @@ class NotificationPreferencesModal(discord.ui.Modal):
 
         # Daily digest time
         self.daily_digest_input = discord.ui.TextInput(
-            label="Daily Digest Time (HH:MM, empty to disable)",
-            placeholder="e.g., 09:00",
+            label="Daily Digest Time (HH:MM, blank=off)",
+            placeholder="e.g., 09:00 (leave blank to disable)",
             default=current_prefs.get("daily_digest_time", "09:00") if current_prefs.get("enable_daily_digest") else "",
             required=False,
             style=discord.TextStyle.short,
@@ -993,8 +993,8 @@ class NotificationPreferencesModal(discord.ui.Modal):
 
         # Quiet hours
         self.quiet_hours_input = discord.ui.TextInput(
-            label="Quiet Hours (HH:MM-HH:MM, empty for none)",
-            placeholder="e.g., 22:00-08:00",
+            label="Quiet Hours (HH:MM-HH:MM, blank=none)",
+            placeholder="e.g., 22:00-08:00 (leave blank for none)",
             default=(
                 f"{current_prefs.get('quiet_hours_start', '')}-{current_prefs.get('quiet_hours_end', '')}"
                 if current_prefs.get("quiet_hours_start")
@@ -1011,8 +1011,8 @@ class NotificationPreferencesModal(discord.ui.Modal):
         advance_str = ",".join(str(d) for d in advance_days)
 
         self.advance_days_input = discord.ui.TextInput(
-            label="Remind me X days before due date (comma-separated)",
-            placeholder="e.g., 1,3,7 for 1, 3, and 7 days before",
+            label="Days Before Due Date (comma-separated)",
+            placeholder="e.g., 1,3,7 for reminders 1, 3, 7 days early",
             default=advance_str,
             required=False,
             style=discord.TextStyle.short,
