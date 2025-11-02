@@ -11,4 +11,3 @@
 | 9 | 14 | Tip the creator | 10.0 | 5.0 | 5.0 | 0 | pending | - | - |
 | 10 | 15 | Add rewards for completing a task | 10.0 | 5.0 | 5.0 | 0 | pending | - | - |
 | 11 | 16 | recover deleted tasks | 10.0 | 5.0 | 5.0 | 0 | pending | - | - |
-| 12 | 18 | Editing due date | 10.0 | 5.0 | 5.0 | 0 | pending | - | - |
