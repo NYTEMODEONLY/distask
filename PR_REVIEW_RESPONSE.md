@@ -2,7 +2,54 @@
 
 ## ✅ All Issues Resolved
 
-### 1. Critical Bug Fixed: Snoozed Reminders Never Deleted (P1)
+### 1. Critical Bug Fixed: Missing Channel ID for Digest Delivery (P1)
+
+**Issue Identified by Code Reviewer:**
+> The digest engine sends messages using NotificationRouter, which requires a valid channel_id for the default channel delivery method. In the loop that populates user_tasks_map, only board_name and board_id are appended, so the task dictionaries never include channel_id. Later, _send_daily_digest computes channel_id = tasks[0].get("channel_id"), which will always be None, causing _send_channel to bail out and no digest ever reaches users who haven't switched away from the default channel delivery.
+
+**Root Cause:**
+- When building digest task list, only `board_name` and `board_id` were appended
+- `channel_id` was not included in task data
+- `_send_daily_digest` and `_send_weekly_digest` try to get `channel_id = tasks[0].get("channel_id")`
+- Result: `channel_id` is always None
+- NotificationRouter's default "channel" delivery method fails
+- Users with default delivery method never receive digests
+
+**Solution Implemented:**
+
+#### Include Board Channel ID in Task Data
+
+**File Modified:**
+`utils/scheduler_v2.py:182-187` - Added `channel_id` to task data when populating `user_tasks_map`
+
+**Code Changes:**
+
+```python
+# BEFORE (buggy - missing channel_id):
+user_tasks_map[assignee_id].append({
+    **task,
+    "board_name": board["name"],
+    "board_id": board["id"]
+})
+
+# AFTER (fixed - includes channel_id):
+user_tasks_map[assignee_id].append({
+    **task,
+    "board_name": board["name"],
+    "board_id": board["id"],
+    "channel_id": board["channel_id"],  # ✅ Now included for delivery
+})
+```
+
+**Impact:**
+- ✅ Daily digests now have valid `channel_id` for delivery
+- ✅ Weekly digests now have valid `channel_id` for delivery
+- ✅ Users with default "channel" delivery method receive digests
+- ✅ No silent delivery failures
+
+---
+
+### 2. Critical Bug Fixed: Snoozed Reminders Never Deleted (P1)
 
 **Issue Identified by Code Reviewer:**
 > The scheduler fetches due snoozed reminders with SELECT sr.*, t.*, boards.channel_id, boards.guild_id, but both snoozed_reminders and tasks have an id column. When the row is converted to a dict in get_due_snoozed_reminders, the task's id overwrites the snooze record's id. SnoozedReminderEngine.run then uses item["id"] as the snooze identifier for delete_snoozed_reminder, which sends a DELETE with the task id and leaves the actual snooze row intact. Those rows will be returned again on the next loop, so the user receives the same "snoozed" notification every minute and the table grows indefinitely.
@@ -67,7 +114,7 @@ snooze_id = item.get("snooze_id")  # Gets correct snooze record id
 
 ---
 
-### 2. Critical Bug Fixed: Foreign Key Violation (P1)
+### 3. Critical Bug Fixed: Foreign Key Violation (P1)
 
 **Issue Identified by Code Reviewer:**
 > Daily and weekly digest notifications call send_notification with task_id=0 as a sentinel. NotificationRouter records successful sends in notification_history, whose schema declares task_id as a foreign key to tasks.id. Because there is never a task row with id 0, record_notification raises a foreign‑key violation and the digest loop aborts before processing any other users.
@@ -141,7 +188,7 @@ async def check_notification_sent(
 
 ---
 
-### 3. Critical Bug Fixed: Duplicate Digest Notifications
+### 4. Critical Bug Fixed: Duplicate Digest Notifications
 
 **Issue Identified by Code Reviewer:**
 > Daily and weekly digests will fire multiple times in rapid succession. EnhancedScheduler runs once per minute, and PreferenceManager.should_send_digest_now returns True for every minute in a five-minute window around the configured time (abs(now_user_tz.minute - target_minute) < 5). Because digest notifications are not recorded in notification_history (they pass task_id=None), users will receive up to five identical digests each day/week.
@@ -207,7 +254,7 @@ await self.router.send_notification(
 
 **Impact:** Records digests in `notification_history` for future deduplication checks.
 
-### 4. Merge Conflicts Resolved
+### 5. Merge Conflicts Resolved
 
 **Conflict:** `cogs/ui/views.py`
 - Main branch added: `PastDueDateConfirmationView`
@@ -222,7 +269,7 @@ grep -n "class PastDueDateConfirmationView" cogs/ui/views.py  # Line 1152
 grep -n "class NotificationActionView" cogs/ui/views.py        # Line 1276
 ```
 
-### 5. Branch Sync Complete
+### 6. Branch Sync Complete
 
 **Status:** Feature branch now fully synced with main
 - ✅ All 116 commits from main merged
@@ -234,8 +281,8 @@ grep -n "class NotificationActionView" cogs/ui/views.py        # Line 1276
 ## 📊 Changes Summary
 
 ### Files Modified (Bug Fixes)
-1. `utils/db.py` - Fixed snoozed reminder query (explicit column aliases) + NULL task_id handling
-2. `utils/scheduler_v2.py` - Fixed snooze_id usage + pre-send checks + NULL task_id
+1. `utils/scheduler_v2.py` - Fixed channel_id inclusion + snooze_id usage + pre-send checks + NULL task_id
+2. `utils/db.py` - Fixed snoozed reminder query (explicit column aliases) + NULL task_id handling
 3. `utils/preference_manager.py` - Exact minute matching for digests
 4. `cogs/ui/views.py` - Merge conflict resolved (both classes kept)
 
@@ -243,11 +290,19 @@ grep -n "class NotificationActionView" cogs/ui/views.py        # Line 1276
 1. `583b02f` - Original feature implementation (2,958 line changes)
 2. `bb999d5` - Merge main + duplicate digest bug fix
 3. `f6409aa` - FK violation bug fix (task_id=0 → task_id=None)
-4. `[pending]` - Snoozed reminders bug fix (column collision)
+4. `c1b77d8` - Snoozed reminders bug fix (column collision)
+5. `[pending]` - Digest delivery bug fix (missing channel_id)
 
 ---
 
 ## 🧪 Testing Verification Needed
+
+### Critical Tests (Digest Delivery Bug Fix)
+- [ ] **Channel Delivery:** Users with default "channel" delivery method receive digests
+- [ ] **Daily Digest Delivery:** Digest appears in board's Discord channel
+- [ ] **Weekly Digest Delivery:** Digest appears in board's Discord channel
+- [ ] **Valid Channel ID:** Verify `channel_id` is not None in digest notifications
+- [ ] **Multiple Boards:** Users with tasks across multiple boards receive digest in first board's channel
 
 ### Critical Tests (Snoozed Reminders Bug Fix)
 - [ ] **Snooze Once Delivery:** Snoozed reminder fires exactly once when due
@@ -265,6 +320,29 @@ grep -n "class NotificationActionView" cogs/ui/views.py        # Line 1276
 - [ ] **No FK Violations:** Digest notifications succeed without constraint errors
 
 ### Test Scenarios
+
+#### Digest Delivery with Channel ID
+```python
+# Scenario 1: User with default "channel" delivery receives daily digest
+User preferences: delivery_method = "channel" (default)
+User has 5 tasks assigned across 2 boards
+→ DigestEngine builds user_tasks_map including channel_id from each board
+→ Daily digest time matches user's configured time
+→ _send_daily_digest called with tasks including channel_id
+→ channel_id = tasks[0].get("channel_id")  # ✅ Returns valid channel_id
+→ NotificationRouter sends to channel successfully
+→ User sees digest in board's Discord channel ✅
+
+# Scenario 2: Missing channel_id (old buggy behavior)
+BEFORE FIX:
+→ channel_id = tasks[0].get("channel_id")  # Returns None
+→ NotificationRouter._send_channel bails out with None channel_id
+→ User never receives digest ❌
+
+AFTER FIX:
+→ channel_id = tasks[0].get("channel_id")  # Returns valid channel_id
+→ User receives digest ✅
+```
 
 #### Snoozed Reminders
 ```python
@@ -399,11 +477,12 @@ We use `task_id=NULL` for digests because:
 ## ✅ Ready for Re-Review
 
 All issues identified by the code reviewer have been addressed:
-1. ✅ **Snoozed reminders infinite loop bug:** Fixed with explicit column aliases
-2. ✅ **FK violation bug:** Fixed by using NULL instead of task_id=0
-3. ✅ **Duplicate digest bug:** Fixed with 3-part solution (exact minute + deduplication)
-4. ✅ **Merge conflicts:** Resolved, branch synced
-5. ✅ **Code quality:** Syntax checks passing
+1. ✅ **Digest delivery bug:** Fixed by including channel_id in task data
+2. ✅ **Snoozed reminders infinite loop bug:** Fixed with explicit column aliases
+3. ✅ **FK violation bug:** Fixed by using NULL instead of task_id=0
+4. ✅ **Duplicate digest bug:** Fixed with 3-part solution (exact minute + deduplication)
+5. ✅ **Merge conflicts:** Resolved, branch synced
+6. ✅ **Code quality:** Syntax checks passing
 
 **Next Steps:**
 1. Code reviewer validates the fix

@@ -179,7 +179,12 @@ class DigestEngine:
                     for assignee_id in assignee_ids:
                         if assignee_id not in user_tasks_map:
                             user_tasks_map[assignee_id] = []
-                        user_tasks_map[assignee_id].append({**task, "board_name": board["name"], "board_id": board["id"]})
+                        user_tasks_map[assignee_id].append({
+                            **task,
+                            "board_name": board["name"],
+                            "board_id": board["id"],
+                            "channel_id": board["channel_id"],
+                        })
 
             # Send digests to each user
             for user_id, user_tasks in user_tasks_map.items():
