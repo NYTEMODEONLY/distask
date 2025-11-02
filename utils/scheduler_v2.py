@@ -185,14 +185,14 @@ class DigestEngine:
             for user_id, user_tasks in user_tasks_map.items():
                 # Check if it's time for daily digest
                 if await self.pref_manager.should_send_digest_now(user_id, guild_id, "daily"):
-                    # Check if we already sent today's digest (use sentinel task_id=0 for digests)
-                    if not await self.db.check_notification_sent(user_id, 0, "daily_digest", within_hours=23):
+                    # Check if we already sent today's digest (use task_id=None for digests)
+                    if not await self.db.check_notification_sent(user_id, None, "daily_digest", within_hours=23):
                         await self._send_daily_digest(user_id, guild_id, user_tasks)
 
                 # Check if it's time for weekly digest
                 if await self.pref_manager.should_send_digest_now(user_id, guild_id, "weekly"):
-                    # Check if we already sent this week's digest (use sentinel task_id=0 for digests)
-                    if not await self.db.check_notification_sent(user_id, 0, "weekly_digest", within_hours=167):  # 7 days
+                    # Check if we already sent this week's digest (use task_id=None for digests)
+                    if not await self.db.check_notification_sent(user_id, None, "weekly_digest", within_hours=167):  # 7 days
                         await self._send_weekly_digest(user_id, guild_id, user_tasks)
 
     async def _send_daily_digest(
@@ -271,13 +271,13 @@ class DigestEngine:
         # Find a channel to send to (use first board's channel)
         channel_id = tasks[0].get("channel_id") if tasks else None
 
-        # Use sentinel task_id=0 for digest tracking
+        # Use task_id=None for digest tracking (digests are not tied to specific tasks)
         await self.router.send_notification(
             user_id=user_id,
             guild_id=guild_id,
             embed=embed,
             notification_type="daily_digest",
-            task_id=0,  # Sentinel value for digest deduplication
+            task_id=None,  # NULL value - digests are not task-specific
             channel_id=channel_id,
         )
 
@@ -330,13 +330,13 @@ class DigestEngine:
         # Find a channel to send to
         channel_id = tasks[0].get("channel_id") if tasks else None
 
-        # Use sentinel task_id=0 for digest tracking
+        # Use task_id=None for digest tracking (digests are not tied to specific tasks)
         await self.router.send_notification(
             user_id=user_id,
             guild_id=guild_id,
             embed=embed,
             notification_type="weekly_digest",
-            task_id=0,  # Sentinel value for digest deduplication
+            task_id=None,  # NULL value - digests are not task-specific
             channel_id=channel_id,
         )
 

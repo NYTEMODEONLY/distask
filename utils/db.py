@@ -1190,7 +1190,7 @@ class Database:
     async def check_notification_sent(
         self,
         user_id: int,
-        task_id: int,
+        task_id: Optional[int],
         notification_type: str,
         *,
         within_hours: int = 24,
@@ -1198,15 +1198,28 @@ class Database:
         """Check if a notification was recently sent to avoid duplicates."""
         from datetime import datetime, timedelta, timezone
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=within_hours)).strftime(ISO_FORMAT)
-        row = await self._execute(
-            """
-            SELECT COUNT(1) as count
-            FROM notification_history
-            WHERE user_id = $1 AND task_id = $2 AND notification_type = $3 AND sent_at >= $4
-            """,
-            (user_id, task_id, notification_type, cutoff),
-            fetchone=True,
-        )
+
+        # Handle NULL task_id for digests - use IS NOT DISTINCT FROM for proper NULL comparison
+        if task_id is None:
+            row = await self._execute(
+                """
+                SELECT COUNT(1) as count
+                FROM notification_history
+                WHERE user_id = $1 AND task_id IS NULL AND notification_type = $2 AND sent_at >= $3
+                """,
+                (user_id, notification_type, cutoff),
+                fetchone=True,
+            )
+        else:
+            row = await self._execute(
+                """
+                SELECT COUNT(1) as count
+                FROM notification_history
+                WHERE user_id = $1 AND task_id = $2 AND notification_type = $3 AND sent_at >= $4
+                """,
+                (user_id, task_id, notification_type, cutoff),
+                fetchone=True,
+            )
         return bool(row and row["count"] > 0)
 
     async def acknowledge_notification(self, notification_id: int) -> bool:

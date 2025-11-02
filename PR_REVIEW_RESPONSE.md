@@ -2,7 +2,81 @@
 
 ## ✅ All Issues Resolved
 
-### 1. Critical Bug Fixed: Duplicate Digest Notifications
+### 1. Critical Bug Fixed: Foreign Key Violation (P1)
+
+**Issue Identified by Code Reviewer:**
+> Daily and weekly digest notifications call send_notification with task_id=0 as a sentinel. NotificationRouter records successful sends in notification_history, whose schema declares task_id as a foreign key to tasks.id. Because there is never a task row with id 0, record_notification raises a foreign‑key violation and the digest loop aborts before processing any other users.
+
+**Root Cause:**
+- Using `task_id=0` as sentinel value
+- `notification_history.task_id` references `tasks(id)` (BIGSERIAL, starts at 1)
+- FK constraint violation → digest notifications fail completely
+- No users receive digests, error logged every run
+
+**Solution Implemented:**
+
+#### Use NULL Instead of Sentinel Value 0
+
+**Files Modified:**
+1. `utils/scheduler_v2.py:189, 195, 280, 339` - Changed `task_id=0` to `task_id=None`
+2. `utils/db.py:1190-1223` - Updated `check_notification_sent` to handle NULL properly
+
+**Code Changes:**
+
+```python
+# BEFORE (buggy - FK violation):
+await self.db.check_notification_sent(user_id, 0, "daily_digest", within_hours=23)
+await self.router.send_notification(..., task_id=0, ...)
+
+# AFTER (fixed - NULL is valid):
+await self.db.check_notification_sent(user_id, None, "daily_digest", within_hours=23)
+await self.router.send_notification(..., task_id=None, ...)
+```
+
+**Database Fix (`utils/db.py`):**
+```python
+async def check_notification_sent(
+    self,
+    user_id: int,
+    task_id: Optional[int],  # ✅ Now accepts None
+    notification_type: str,
+    *,
+    within_hours: int = 24,
+) -> bool:
+    # Handle NULL task_id for digests - use IS NULL for proper NULL comparison
+    if task_id is None:
+        row = await self._execute(
+            """
+            SELECT COUNT(1) as count
+            FROM notification_history
+            WHERE user_id = $1 AND task_id IS NULL AND notification_type = $2 AND sent_at >= $3
+            """,
+            (user_id, notification_type, cutoff),
+            fetchone=True,
+        )
+    else:
+        # Original logic for task-specific notifications
+        row = await self._execute(
+            """
+            SELECT COUNT(1) as count
+            FROM notification_history
+            WHERE user_id = $1 AND task_id = $2 AND notification_type = $3 AND sent_at >= $4
+            """,
+            (user_id, task_id, notification_type, cutoff),
+            fetchone=True,
+        )
+    return bool(row and row["count"] > 0)
+```
+
+**Impact:**
+- ✅ Digests now record correctly in `notification_history` with NULL task_id
+- ✅ No FK constraint violations
+- ✅ Deduplication works correctly (SQL `IS NULL` comparison)
+- ✅ All users receive digests as expected
+
+---
+
+### 2. Critical Bug Fixed: Duplicate Digest Notifications
 
 **Issue Identified by Code Reviewer:**
 > Daily and weekly digests will fire multiple times in rapid succession. EnhancedScheduler runs once per minute, and PreferenceManager.should_send_digest_now returns True for every minute in a five-minute window around the configured time (abs(now_user_tz.minute - target_minute) < 5). Because digest notifications are not recorded in notification_history (they pass task_id=None), users will receive up to five identical digests each day/week.
@@ -145,12 +219,13 @@ All tests from original `IMPLEMENTATION_SUMMARY.md` still apply:
 
 ## 📝 Technical Details
 
-### Sentinel Task ID Pattern
-We use `task_id=0` as a sentinel value for digests because:
-1. Real task IDs start at 1 (BIGSERIAL PRIMARY KEY)
-2. Allows reusing existing `notification_history` table
-3. Enables `check_notification_sent()` deduplication logic
-4. No schema changes required
+### NULL Task ID Pattern
+We use `task_id=NULL` for digests because:
+1. Digests are not tied to specific tasks
+2. NULL is allowed by the schema (task_id is nullable FK)
+3. No FK constraint violations (unlike sentinel value 0)
+4. SQL `IS NULL` comparison works correctly for deduplication
+5. No schema changes required
 
 ### Deduplication Windows
 - **Daily Digest:** 23 hours (allows for 1-hour clock drift)
