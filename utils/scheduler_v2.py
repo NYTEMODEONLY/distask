@@ -185,11 +185,15 @@ class DigestEngine:
             for user_id, user_tasks in user_tasks_map.items():
                 # Check if it's time for daily digest
                 if await self.pref_manager.should_send_digest_now(user_id, guild_id, "daily"):
-                    await self._send_daily_digest(user_id, guild_id, user_tasks)
+                    # Check if we already sent today's digest (use sentinel task_id=0 for digests)
+                    if not await self.db.check_notification_sent(user_id, 0, "daily_digest", within_hours=23):
+                        await self._send_daily_digest(user_id, guild_id, user_tasks)
 
                 # Check if it's time for weekly digest
                 if await self.pref_manager.should_send_digest_now(user_id, guild_id, "weekly"):
-                    await self._send_weekly_digest(user_id, guild_id, user_tasks)
+                    # Check if we already sent this week's digest (use sentinel task_id=0 for digests)
+                    if not await self.db.check_notification_sent(user_id, 0, "weekly_digest", within_hours=167):  # 7 days
+                        await self._send_weekly_digest(user_id, guild_id, user_tasks)
 
     async def _send_daily_digest(
         self,
@@ -267,11 +271,13 @@ class DigestEngine:
         # Find a channel to send to (use first board's channel)
         channel_id = tasks[0].get("channel_id") if tasks else None
 
+        # Use sentinel task_id=0 for digest tracking
         await self.router.send_notification(
             user_id=user_id,
             guild_id=guild_id,
             embed=embed,
             notification_type="daily_digest",
+            task_id=0,  # Sentinel value for digest deduplication
             channel_id=channel_id,
         )
 
@@ -324,11 +330,13 @@ class DigestEngine:
         # Find a channel to send to
         channel_id = tasks[0].get("channel_id") if tasks else None
 
+        # Use sentinel task_id=0 for digest tracking
         await self.router.send_notification(
             user_id=user_id,
             guild_id=guild_id,
             embed=embed,
             notification_type="weekly_digest",
+            task_id=0,  # Sentinel value for digest deduplication
             channel_id=channel_id,
         )
 

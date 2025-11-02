@@ -314,10 +314,10 @@ class PreferenceManager:
             digest_time = prefs.get("daily_digest_time", "09:00")
             target_hour, target_minute = map(int, digest_time.split(":"))
 
-            # Check if current time matches digest time (within 5 minute window)
+            # Check if current time matches digest time (exact minute to prevent duplicates)
             return (
                 now_user_tz.hour == target_hour
-                and abs(now_user_tz.minute - target_minute) < 5
+                and now_user_tz.minute == target_minute
             )
 
         elif digest_type == "weekly":
@@ -328,11 +328,11 @@ class PreferenceManager:
             digest_time = prefs.get("weekly_digest_time", "09:00")
             target_hour, target_minute = map(int, digest_time.split(":"))
 
-            # Check if current day and time match
+            # Check if current day and time match (exact minute to prevent duplicates)
             return (
                 now_user_tz.weekday() == digest_day
                 and now_user_tz.hour == target_hour
-                and abs(now_user_tz.minute - target_minute) < 5
+                and now_user_tz.minute == target_minute
             )
 
         return False

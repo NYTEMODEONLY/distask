@@ -545,17 +545,35 @@ class EditTaskModal(discord.ui.Modal):
                 assignee_ids_to_set = []
                 updates["assignee_id"] = None
 
-        # Validate due date
+        # Validate due date - check if it's in the past
+        past_date_warning = None
         if self.due_date_input.value is not None:
             due_text = self.due_date_input.value.strip()
             if due_text:
                 try:
-                    updates["due_date"] = Validator.parse_due_date(due_text)
+                    # First try parsing without allowing past dates (for validation)
+                    parsed_date = Validator.parse_due_date(due_text, allow_past=False)
+                    updates["due_date"] = parsed_date
                 except ValueError as exc:
-                    await interaction.response.send_message(
-                        embed=self.embeds.message("Invalid Due Date", str(exc), emoji="⚠️"),
-                    )
-                    return
+                    # Check if error is about past date or invalid format
+                    if "must be in the future" in str(exc):
+                        # Date is in the past - parse it allowing past dates and show warning
+                        try:
+                            parsed_date = Validator.parse_due_date(due_text, allow_past=True)
+                            updates["due_date"] = parsed_date
+                            past_date_warning = parsed_date
+                        except ValueError:
+                            # Invalid format
+                            await interaction.response.send_message(
+                                embed=self.embeds.message("Invalid Due Date", str(exc), emoji="⚠️"),
+                            )
+                            return
+                    else:
+                        # Invalid format
+                        await interaction.response.send_message(
+                            embed=self.embeds.message("Invalid Due Date", str(exc), emoji="⚠️"),
+                        )
+                        return
             else:
                 updates["due_date"] = None
 
@@ -566,7 +584,41 @@ class EditTaskModal(discord.ui.Modal):
             )
             return
 
-        # PHASE 2: All validation passed - defer and apply all changes atomically
+        # PHASE 2: Check for past date warning
+        if past_date_warning:
+            # Show confirmation dialog for past due date
+            from .views import PastDueDateConfirmationView
+            from datetime import datetime
+            from utils.validators import ISO_FORMAT
+            
+            # Format the date for display
+            try:
+                dt = datetime.strptime(past_date_warning, ISO_FORMAT)
+                formatted_date = dt.strftime("%Y-%m-%d %H:%M UTC")
+            except ValueError:
+                formatted_date = past_date_warning
+            
+            view = PastDueDateConfirmationView(
+                task_id=self.task_id,
+                updates=updates,
+                assignee_ids_to_set=assignee_ids_to_set,
+                db=self.db,
+                embeds=self.embeds,
+                past_date_str=formatted_date,
+            )
+            
+            await interaction.response.send_message(
+                embed=self.embeds.message(
+                    "⚠️ Past Due Date Warning",
+                    f"You're setting the due date for task #{self.task_id} to **{formatted_date}**, which is in the past.\n\n"
+                    "This may affect reminders and notifications. Are you sure you want to continue?",
+                    emoji="⚠️",
+                ),
+                view=view,
+            )
+            return
+
+        # PHASE 3: All validation passed - defer and apply all changes atomically
         await interaction.response.defer(thinking=True)
 
         # Track updated fields for notification

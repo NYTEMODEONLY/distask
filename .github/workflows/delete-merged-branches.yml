@@ -1,0 +1,30 @@
+name: Auto-delete merged feature branches
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  delete-branch:
+    if: github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'feature/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      
+      - name: Delete merged feature branch
+        run: |
+          BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
+          echo "Deleting merged feature branch: $BRANCH_NAME"
+          
+          # Delete remote branch using GitHub CLI or git
+          if git push origin --delete "$BRANCH_NAME" 2>&1; then
+            echo "✅ Branch $BRANCH_NAME deleted successfully"
+          else
+            echo "⚠️ Branch $BRANCH_NAME may have already been deleted or doesn't exist"
+          fi
+

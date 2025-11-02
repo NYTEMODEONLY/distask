@@ -346,6 +346,7 @@ async def scan_github_prs(
                                 "merge_commit_sha": merge_commit_sha or "",
                                 "merged_at": pr.get("merged_at", ""),
                                 "feature_ids": ",".join(str(fid) for fid in feature_ids),
+                                "branch_name": pr.get("head", {}).get("ref", ""),
                             })
                     
                     # If we got fewer than per_page, we're done
@@ -537,6 +538,25 @@ async def main() -> None:
                             completed_ids.append(feature_id)
                         else:
                             logging.debug("Feature #%s already marked via commit, skipping PR #%s", feature_id, pr_number)
+                    
+                    # Optional: Delete merged feature branch (only if branch name matches pattern)
+                    branch_name = pr.get("branch_name", "")
+                    if branch_name and branch_name.startswith("feature/"):
+                        try:
+                            result = subprocess.run(
+                                ["git", "push", "origin", "--delete", branch_name],
+                                cwd=ROOT_DIR,
+                                capture_output=True,
+                                text=True,
+                                timeout=10,
+                            )
+                            if result.returncode == 0:
+                                logging.info("Deleted merged feature branch: %s", branch_name)
+                            else:
+                                # Branch may already be deleted or not exist - that's okay
+                                logging.debug("Could not delete branch %s (may already be deleted): %s", branch_name, result.stderr)
+                        except Exception as exc:
+                            logging.debug("Failed to delete branch %s: %s", branch_name, exc)
                 
                 last_pr_number = max_pr_number
             except Exception as exc:

@@ -136,6 +136,7 @@ Quick reference:
 - **Include `FR-123`** (or `feature-request #123`) in commit messages and PR title/description
 - **Install git hooks** (`./scripts/setup-git-hooks.sh`) to auto-inject FR markers
 - Automation scans both **merged PRs** and **commits** to detect completion
+- **Branches auto-deleted**: Merged `feature/*` branches are automatically deleted by GitHub Actions and feature agent
 - Without FR markers, the database keeps the request `pending`; manual edits will be overwritten
 - Post-merge, automation runs nightly at 03:30 CST via `distask-feature-agent.timer`; manually trigger with `sudo systemctl start distask-feature-agent.service`
 
