@@ -942,6 +942,21 @@ class TaskActionsView(discord.ui.View):
         new_status = not self.task.get("completed", False)
         await interaction.response.defer(thinking=True)
         await self.db.toggle_complete(self.task_id, new_status)
+
+        # Send event notification when task is completed (not when reopened)
+        if new_status and hasattr(interaction.client, "event_notifier") and interaction.guild_id:
+            # Get updated task and board info
+            updated_task = await self.db.fetch_task(self.task_id)
+            if updated_task:
+                board = await self.db.get_board(interaction.guild_id, updated_task["board_id"])
+                if board:
+                    await interaction.client.event_notifier.notify_task_completed(
+                        task=updated_task,
+                        completer_id=interaction.user.id,
+                        guild_id=interaction.guild_id,
+                        channel_id=board["channel_id"],
+                    )
+
         status = "completed" if new_status else "reopened"
         emoji = "✅" if new_status else "↩️"
         await interaction.followup.send(
@@ -1132,3 +1147,79 @@ class DeleteTaskConfirmationView(discord.ui.View):
         await interaction.followup.send(
             embed=self.embeds.message("Task Deleted", f"Removed task #{self.task_id}.", emoji="🗑️"),
         )
+
+
+class NotificationActionView(discord.ui.View):
+    """View with interactive buttons for notification actions."""
+
+    def __init__(
+        self,
+        *,
+        task_id: int,
+        notification_type: str,
+        timeout: float = 300.0,
+    ) -> None:
+        super().__init__(timeout=timeout)
+        self.task_id = task_id
+        self.notification_type = notification_type
+
+    @discord.ui.button(label="Snooze 1h", style=discord.ButtonStyle.secondary, emoji="⏰", custom_id="snooze_1h")
+    async def snooze_1h_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        """Snooze notification for 1 hour."""
+        from datetime import datetime, timedelta, timezone as dt_timezone
+        from utils.db import ISO_FORMAT
+
+        # Calculate snooze_until time
+        snooze_until = (datetime.now(dt_timezone.utc) + timedelta(hours=1)).strftime(ISO_FORMAT)
+
+        # Get database from bot
+        db = interaction.client.db
+
+        # Create snooze record
+        await db.snooze_reminder(
+            user_id=interaction.user.id,
+            task_id=self.task_id,
+            notification_type=self.notification_type,
+            snooze_until=snooze_until,
+        )
+
+        await interaction.response.send_message(
+            content="✅ Reminder snoozed for 1 hour",
+            ephemeral=True,
+        )
+        self.stop()
+
+    @discord.ui.button(label="Snooze 1d", style=discord.ButtonStyle.secondary, emoji="💤", custom_id="snooze_1d")
+    async def snooze_1d_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        """Snooze notification for 1 day."""
+        from datetime import datetime, timedelta, timezone as dt_timezone
+        from utils.db import ISO_FORMAT
+
+        # Calculate snooze_until time
+        snooze_until = (datetime.now(dt_timezone.utc) + timedelta(days=1)).strftime(ISO_FORMAT)
+
+        # Get database from bot
+        db = interaction.client.db
+
+        # Create snooze record
+        await db.snooze_reminder(
+            user_id=interaction.user.id,
+            task_id=self.task_id,
+            notification_type=self.notification_type,
+            snooze_until=snooze_until,
+        )
+
+        await interaction.response.send_message(
+            content="✅ Reminder snoozed for 1 day",
+            ephemeral=True,
+        )
+        self.stop()
+
+    @discord.ui.button(label="Mark as Read", style=discord.ButtonStyle.primary, emoji="✅", custom_id="mark_read")
+    async def mark_read_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        """Mark notification as read/acknowledged."""
+        await interaction.response.send_message(
+            content="✅ Notification marked as read",
+            ephemeral=True,
+        )
+        self.stop()

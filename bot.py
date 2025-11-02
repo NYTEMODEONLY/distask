@@ -11,6 +11,9 @@ from discord.ext import commands
 from dotenv import load_dotenv
 
 from utils import Database, EmbedFactory, ReminderScheduler
+from utils.preference_manager import PreferenceManager
+from utils.notifications import NotificationRouter, EventNotifier
+from utils.scheduler_v2 import EnhancedScheduler
 
 BASE_DIR = Path(__file__).parent
 
@@ -74,6 +77,13 @@ class DisTaskBot(commands.Bot):
         self.db = Database(config["database_url"], default_reminder=config["reminder_time"])
         self.embeds = EmbedFactory()
         self.reminders = ReminderScheduler(self, self.db, self.embeds, logging.getLogger("distask.reminders"))
+
+        # Initialize enhanced notification system
+        self.pref_manager = PreferenceManager(self.db)
+        self.notification_router = NotificationRouter(self, self.db, self.pref_manager)
+        self.event_notifier = EventNotifier(self, self.db, self.notification_router)
+        self.enhanced_scheduler = EnhancedScheduler(self, self.db)
+
         self.tree.on_error = self.on_app_command_error
 
     async def setup_hook(self) -> None:
@@ -82,9 +92,12 @@ class DisTaskBot(commands.Bot):
         await self.add_cog(self._build_tasks_cog())
         await self.add_cog(self._build_features_cog())
         await self.add_cog(self._build_admin_cog())
+        await self.add_cog(self._build_notifications_cog())
         await self.tree.sync()
         await self.reminders.start()
+        await self.enhanced_scheduler.start()
         self.logger.info("Slash commands synced.")
+        self.logger.info("Enhanced notification system started.")
 
     async def on_ready(self) -> None:
         self.logger.info("Logged in as %s (%s)", self.user, self.user and self.user.id)
@@ -95,6 +108,7 @@ class DisTaskBot(commands.Bot):
 
     async def close(self) -> None:
         await self.reminders.stop()
+        await self.enhanced_scheduler.stop()
         await self.db.close()
         await super().close()
 
@@ -149,6 +163,11 @@ class DisTaskBot(commands.Bot):
             community_channel_id=self.config.get("community_channel_id"),
             community_webhook_url=self.config.get("community_feature_webhook"),
         )
+
+    def _build_notifications_cog(self) -> commands.Cog:
+        from cogs.notifications import NotificationsCog
+
+        return NotificationsCog(self, self.db, self.embeds)
 
 
 def main() -> None:

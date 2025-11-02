@@ -186,7 +186,29 @@ class TasksCog(commands.Cog):
             # Show column selector for the task's board
             async def on_column_selected(col_inter: discord.Interaction, column_id: int, column: dict) -> None:
                 await col_inter.response.defer(thinking=True)
+
+                # Get original column name for notification
+                old_column = await self.db.get_column_by_id(task["column_id"])
+                old_column_name = old_column["name"] if old_column else "Unknown"
+
+                # Move task
                 await self.db.move_task(task_id, column_id)
+
+                # Send event notification
+                if hasattr(self.bot, "event_notifier") and col_inter.guild_id:
+                    # Get updated task data
+                    updated_task = await self.db.fetch_task(task_id)
+                    board = await self.db.get_board(col_inter.guild_id, task["board_id"])
+                    if updated_task and board:
+                        await self.bot.event_notifier.notify_task_moved(
+                            task=updated_task,
+                            from_column=old_column_name,
+                            to_column=column["name"],
+                            mover_id=col_inter.user.id,
+                            guild_id=col_inter.guild_id,
+                            channel_id=board["channel_id"],
+                        )
+
                 await col_inter.followup.send(
                     embed=self.embeds.message("Task Moved", f"#{task_id} → **{column['name']}**", emoji="🧭"),
                 )
