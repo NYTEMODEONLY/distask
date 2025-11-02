@@ -1255,7 +1255,19 @@ class Database:
         """Get snoozed reminders that are now due."""
         rows = await self._execute(
             """
-            SELECT sr.*, t.*, boards.channel_id, boards.guild_id
+            SELECT
+                sr.id AS snooze_id,
+                sr.user_id,
+                sr.task_id,
+                sr.notification_type,
+                sr.snoozed_at,
+                sr.snooze_until,
+                t.title,
+                t.description,
+                t.due_date,
+                t.completed,
+                boards.channel_id,
+                boards.guild_id
             FROM snoozed_reminders sr
             JOIN tasks t ON sr.task_id = t.id
             JOIN boards ON t.board_id = boards.id

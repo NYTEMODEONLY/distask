@@ -460,7 +460,7 @@ class SnoozedReminderEngine:
         for item in snoozed:
             task_id = item.get("task_id")
             user_id = item.get("user_id")
-            snooze_id = item.get("id")
+            snooze_id = item.get("snooze_id")
 
             # Get fresh task data
             task = await self.db.fetch_task(task_id)

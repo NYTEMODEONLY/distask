@@ -2,7 +2,72 @@
 
 ## ✅ All Issues Resolved
 
-### 1. Critical Bug Fixed: Foreign Key Violation (P1)
+### 1. Critical Bug Fixed: Snoozed Reminders Never Deleted (P1)
+
+**Issue Identified by Code Reviewer:**
+> The scheduler fetches due snoozed reminders with SELECT sr.*, t.*, boards.channel_id, boards.guild_id, but both snoozed_reminders and tasks have an id column. When the row is converted to a dict in get_due_snoozed_reminders, the task's id overwrites the snooze record's id. SnoozedReminderEngine.run then uses item["id"] as the snooze identifier for delete_snoozed_reminder, which sends a DELETE with the task id and leaves the actual snooze row intact. Those rows will be returned again on the next loop, so the user receives the same "snoozed" notification every minute and the table grows indefinitely.
+
+**Root Cause:**
+- SQL query: `SELECT sr.*, t.*` causes column name collision
+- Both `snoozed_reminders.id` and `tasks.id` exist in result
+- When converted to dict, `tasks.id` overwrites `snoozed_reminders.id`
+- `SnoozedReminderEngine` uses wrong ID for deletion (task_id instead of snooze_id)
+- Snooze records never deleted → infinite notification loop + table bloat
+
+**Solution Implemented:**
+
+#### Explicit Column Selection with Aliases
+
+**Files Modified:**
+1. `utils/db.py:1254-1280` - Fixed `get_due_snoozed_reminders()` query
+2. `utils/scheduler_v2.py:463` - Changed `item.get("id")` to `item.get("snooze_id")`
+
+**Code Changes:**
+
+```python
+# BEFORE (buggy - column collision):
+SELECT sr.*, t.*, boards.channel_id, boards.guild_id
+# Task's id overwrites snooze record's id when converted to dict
+
+# AFTER (fixed - explicit columns with alias):
+SELECT
+    sr.id AS snooze_id,  # ✅ Explicitly aliased to avoid collision
+    sr.user_id,
+    sr.task_id,
+    sr.notification_type,
+    sr.snoozed_at,
+    sr.snooze_until,
+    t.title,
+    t.description,
+    t.due_date,
+    t.completed,
+    boards.channel_id,
+    boards.guild_id
+FROM snoozed_reminders sr
+JOIN tasks t ON sr.task_id = t.id
+JOIN boards ON t.board_id = boards.id
+WHERE sr.snooze_until <= $1
+```
+
+**Scheduler Update (`utils/scheduler_v2.py:463`):**
+```python
+# BEFORE (buggy):
+snooze_id = item.get("id")  # Gets task_id due to collision
+
+# AFTER (fixed):
+snooze_id = item.get("snooze_id")  # Gets correct snooze record id
+```
+
+**Impact:**
+- ✅ Correct snooze record ID retrieved from query results
+- ✅ Snooze records properly deleted after notification sent
+- ✅ No infinite notification loops
+- ✅ No table bloat from orphaned snooze records
+- ✅ Users receive snoozed reminders exactly once
+
+---
+
+### 2. Critical Bug Fixed: Foreign Key Violation (P1)
 
 **Issue Identified by Code Reviewer:**
 > Daily and weekly digest notifications call send_notification with task_id=0 as a sentinel. NotificationRouter records successful sends in notification_history, whose schema declares task_id as a foreign key to tasks.id. Because there is never a task row with id 0, record_notification raises a foreign‑key violation and the digest loop aborts before processing any other users.
@@ -76,7 +141,7 @@ async def check_notification_sent(
 
 ---
 
-### 2. Critical Bug Fixed: Duplicate Digest Notifications
+### 3. Critical Bug Fixed: Duplicate Digest Notifications
 
 **Issue Identified by Code Reviewer:**
 > Daily and weekly digests will fire multiple times in rapid succession. EnhancedScheduler runs once per minute, and PreferenceManager.should_send_digest_now returns True for every minute in a five-minute window around the configured time (abs(now_user_tz.minute - target_minute) < 5). Because digest notifications are not recorded in notification_history (they pass task_id=None), users will receive up to five identical digests each day/week.
@@ -142,7 +207,7 @@ await self.router.send_notification(
 
 **Impact:** Records digests in `notification_history` for future deduplication checks.
 
-### 2. Merge Conflicts Resolved
+### 4. Merge Conflicts Resolved
 
 **Conflict:** `cogs/ui/views.py`
 - Main branch added: `PastDueDateConfirmationView`
@@ -157,7 +222,7 @@ grep -n "class PastDueDateConfirmationView" cogs/ui/views.py  # Line 1152
 grep -n "class NotificationActionView" cogs/ui/views.py        # Line 1276
 ```
 
-### 3. Branch Sync Complete
+### 5. Branch Sync Complete
 
 **Status:** Feature branch now fully synced with main
 - ✅ All 116 commits from main merged
@@ -168,27 +233,59 @@ grep -n "class NotificationActionView" cogs/ui/views.py        # Line 1276
 
 ## 📊 Changes Summary
 
-### Files Modified (Bug Fix)
-1. `utils/preference_manager.py` - Exact minute matching for digests
-2. `utils/scheduler_v2.py` - Pre-send checks + sentinel task_id tracking
-3. `cogs/ui/views.py` - Merge conflict resolved (both classes kept)
+### Files Modified (Bug Fixes)
+1. `utils/db.py` - Fixed snoozed reminder query (explicit column aliases) + NULL task_id handling
+2. `utils/scheduler_v2.py` - Fixed snooze_id usage + pre-send checks + NULL task_id
+3. `utils/preference_manager.py` - Exact minute matching for digests
+4. `cogs/ui/views.py` - Merge conflict resolved (both classes kept)
 
 ### Commits
 1. `583b02f` - Original feature implementation (2,958 line changes)
-2. `bb999d5` - Merge + bug fix (resolves reviewer's concern)
+2. `bb999d5` - Merge main + duplicate digest bug fix
+3. `f6409aa` - FK violation bug fix (task_id=0 → task_id=None)
+4. `[pending]` - Snoozed reminders bug fix (column collision)
 
 ---
 
 ## 🧪 Testing Verification Needed
 
-### Critical Tests (Digest Bug Fix)
+### Critical Tests (Snoozed Reminders Bug Fix)
+- [ ] **Snooze Once Delivery:** Snoozed reminder fires exactly once when due
+- [ ] **Record Deletion:** Snooze record deleted from `snoozed_reminders` after sending
+- [ ] **No Infinite Loop:** User does not receive duplicate notifications every minute
+- [ ] **Table Cleanup:** `snoozed_reminders` table does not grow indefinitely
+- [ ] **Correct ID Usage:** Verify `snooze_id` used for deletion, not `task_id`
+
+### Critical Tests (Digest Bug Fixes)
 - [ ] **Daily Digest:** Send exactly once at configured time
 - [ ] **Weekly Digest:** Send exactly once per week
 - [ ] **Timezone Handling:** Verify exact minute matching across timezones
 - [ ] **Deduplication:** Confirm `check_notification_sent` prevents duplicates
-- [ ] **History Recording:** Verify `notification_history` records digest sends
+- [ ] **History Recording:** Verify `notification_history` records digest sends with NULL task_id
+- [ ] **No FK Violations:** Digest notifications succeed without constraint errors
 
 ### Test Scenarios
+
+#### Snoozed Reminders
+```python
+# Scenario 1: User snoozes notification for 1 hour
+User clicks "Snooze 1h" button
+→ Record inserted into snoozed_reminders with snooze_until = now + 1 hour
+→ Original notification dismissed
+
+# After 1 hour passes:
+Scheduler runs get_due_snoozed_reminders()
+→ Returns row with snooze_id=123, task_id=456
+→ Sends notification to user
+→ Calls delete_snoozed_reminder(123)  # ✅ Uses snooze_id, not task_id
+→ Record deleted from snoozed_reminders
+
+# Next scheduler run:
+→ Record no longer returned (properly deleted)
+→ User does NOT receive duplicate notification ✅
+```
+
+#### Digests
 ```python
 # Scenario 1: Exact minute match
 User configured: 09:00
@@ -302,9 +399,11 @@ We use `task_id=NULL` for digests because:
 ## ✅ Ready for Re-Review
 
 All issues identified by the code reviewer have been addressed:
-1. ✅ **Duplicate digest bug:** Fixed with 3-part solution
-2. ✅ **Merge conflicts:** Resolved, branch synced
-3. ✅ **Code quality:** Syntax checks passing
+1. ✅ **Snoozed reminders infinite loop bug:** Fixed with explicit column aliases
+2. ✅ **FK violation bug:** Fixed by using NULL instead of task_id=0
+3. ✅ **Duplicate digest bug:** Fixed with 3-part solution (exact minute + deduplication)
+4. ✅ **Merge conflicts:** Resolved, branch synced
+5. ✅ **Code quality:** Syntax checks passing
 
 **Next Steps:**
 1. Code reviewer validates the fix
