@@ -134,6 +134,111 @@ class Database:
                   )
                 ON CONFLICT (task_id, user_id) DO NOTHING
                 """,
+                # User-level notification preferences
+                """
+                CREATE TABLE IF NOT EXISTS user_notification_preferences (
+                    user_id BIGINT NOT NULL,
+                    guild_id BIGINT REFERENCES guilds(guild_id) ON DELETE CASCADE,
+                    delivery_method TEXT,
+                    timezone TEXT,
+                    quiet_hours_start TEXT,
+                    quiet_hours_end TEXT,
+                    enable_due_date_reminders BOOLEAN DEFAULT TRUE,
+                    enable_event_alerts BOOLEAN DEFAULT TRUE,
+                    enable_daily_digest BOOLEAN DEFAULT TRUE,
+                    enable_weekly_digest BOOLEAN DEFAULT FALSE,
+                    enable_custom_reminders BOOLEAN DEFAULT TRUE,
+                    due_date_advance_days TEXT DEFAULT '[1, 3]',
+                    daily_digest_time TEXT,
+                    weekly_digest_day INTEGER,
+                    weekly_digest_time TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (user_id, guild_id)
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_user_prefs_user ON user_notification_preferences(user_id)",
+                "CREATE INDEX IF NOT EXISTS idx_user_prefs_guild ON user_notification_preferences(guild_id)",
+                # Guild-level notification defaults
+                """
+                CREATE TABLE IF NOT EXISTS guild_notification_defaults (
+                    guild_id BIGINT PRIMARY KEY REFERENCES guilds(guild_id) ON DELETE CASCADE,
+                    delivery_method TEXT DEFAULT 'channel',
+                    enable_due_date_reminders BOOLEAN DEFAULT TRUE,
+                    enable_event_alerts BOOLEAN DEFAULT TRUE,
+                    enable_daily_digest BOOLEAN DEFAULT TRUE,
+                    enable_weekly_digest BOOLEAN DEFAULT FALSE,
+                    due_date_advance_days TEXT DEFAULT '[1]',
+                    daily_digest_time TEXT DEFAULT '09:00',
+                    weekly_digest_day INTEGER DEFAULT 1,
+                    weekly_digest_time TEXT DEFAULT '09:00',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """,
+                # Multiple reminder schedules per guild/user
+                """
+                CREATE TABLE IF NOT EXISTS reminder_schedules (
+                    id BIGSERIAL PRIMARY KEY,
+                    guild_id BIGINT REFERENCES guilds(guild_id) ON DELETE CASCADE,
+                    user_id BIGINT,
+                    reminder_time TEXT NOT NULL,
+                    enabled BOOLEAN DEFAULT TRUE,
+                    created_at TEXT NOT NULL
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_reminder_schedules_guild ON reminder_schedules(guild_id)",
+                "CREATE INDEX IF NOT EXISTS idx_reminder_schedules_user ON reminder_schedules(user_id)",
+                # Notification history for deduplication and analytics
+                """
+                CREATE TABLE IF NOT EXISTS notification_history (
+                    id BIGSERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    guild_id BIGINT REFERENCES guilds(guild_id) ON DELETE CASCADE,
+                    task_id BIGINT REFERENCES tasks(id) ON DELETE CASCADE,
+                    notification_type TEXT NOT NULL,
+                    sent_at TEXT NOT NULL,
+                    acknowledged_at TEXT,
+                    delivery_method TEXT,
+                    notification_data JSONB DEFAULT '{}'::jsonb
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_notification_history_user ON notification_history(user_id)",
+                "CREATE INDEX IF NOT EXISTS idx_notification_history_task ON notification_history(task_id)",
+                "CREATE INDEX IF NOT EXISTS idx_notification_history_type ON notification_history(notification_type)",
+                "CREATE INDEX IF NOT EXISTS idx_notification_history_sent ON notification_history(sent_at)",
+                # Snoozed reminders
+                """
+                CREATE TABLE IF NOT EXISTS snoozed_reminders (
+                    id BIGSERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    task_id BIGINT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                    notification_type TEXT NOT NULL,
+                    snoozed_at TEXT NOT NULL,
+                    snooze_until TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_snoozed_reminders_user ON snoozed_reminders(user_id)",
+                "CREATE INDEX IF NOT EXISTS idx_snoozed_reminders_task ON snoozed_reminders(task_id)",
+                "CREATE INDEX IF NOT EXISTS idx_snoozed_reminders_until ON snoozed_reminders(snooze_until)",
+                # Custom reminder rules
+                """
+                CREATE TABLE IF NOT EXISTS custom_reminder_rules (
+                    id BIGSERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    guild_id BIGINT REFERENCES guilds(guild_id) ON DELETE CASCADE,
+                    board_id BIGINT REFERENCES boards(id) ON DELETE CASCADE,
+                    rule_name TEXT NOT NULL,
+                    rule_pattern TEXT NOT NULL,
+                    rule_data JSONB DEFAULT '{}'::jsonb,
+                    enabled BOOLEAN DEFAULT TRUE,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_custom_rules_user ON custom_reminder_rules(user_id)",
+                "CREATE INDEX IF NOT EXISTS idx_custom_rules_guild ON custom_reminder_rules(guild_id)",
             ]
             for statement in schema_statements:
                 await conn.execute(statement)
@@ -958,6 +1063,280 @@ class Database:
             "commit_message": commit_message,
         }
         await self.append_feature_history(request_id, history_entry)
+
+    # ========== Notification Preferences ==========
+
+    async def get_user_notification_prefs(self, user_id: int, guild_id: int) -> Optional[Dict[str, Any]]:
+        """Get user notification preferences for a specific guild."""
+        row = await self._execute(
+            "SELECT * FROM user_notification_preferences WHERE user_id = $1 AND guild_id = $2",
+            (user_id, guild_id),
+            fetchone=True,
+        )
+        return dict(row) if row else None
+
+    async def set_user_notification_prefs(
+        self,
+        user_id: int,
+        guild_id: int,
+        **preferences: Any,
+    ) -> None:
+        """Set or update user notification preferences."""
+        await self.ensure_guild(guild_id)
+        existing = await self.get_user_notification_prefs(user_id, guild_id)
+        now = _utcnow()
+
+        if existing:
+            # Update existing preferences
+            if preferences:
+                assignments = []
+                params: List[Any] = []
+                for idx, (key, value) in enumerate(preferences.items(), start=1):
+                    assignments.append(f"{key} = ${idx}")
+                    params.append(value)
+                assignments.append(f"updated_at = ${len(params) + 1}")
+                params.append(now)
+                params.extend([user_id, guild_id])
+                await self._execute(
+                    f"UPDATE user_notification_preferences SET {', '.join(assignments)} WHERE user_id = ${len(params) - 1} AND guild_id = ${len(params)}",
+                    tuple(params),
+                )
+        else:
+            # Insert new preferences
+            preferences.setdefault("created_at", now)
+            preferences["updated_at"] = now
+            columns = ["user_id", "guild_id"] + list(preferences.keys())
+            placeholders = [f"${i+1}" for i in range(len(columns))]
+            values = [user_id, guild_id] + list(preferences.values())
+            await self._execute(
+                f"INSERT INTO user_notification_preferences ({', '.join(columns)}) VALUES ({', '.join(placeholders)})",
+                tuple(values),
+            )
+
+    async def get_guild_notification_defaults(self, guild_id: int) -> Optional[Dict[str, Any]]:
+        """Get guild-level notification defaults."""
+        await self.ensure_guild(guild_id)
+        row = await self._execute(
+            "SELECT * FROM guild_notification_defaults WHERE guild_id = $1",
+            (guild_id,),
+            fetchone=True,
+        )
+        return dict(row) if row else None
+
+    async def set_guild_notification_defaults(self, guild_id: int, **defaults: Any) -> None:
+        """Set or update guild notification defaults."""
+        await self.ensure_guild(guild_id)
+        existing = await self.get_guild_notification_defaults(guild_id)
+        now = _utcnow()
+
+        if existing:
+            # Update existing defaults
+            if defaults:
+                assignments = []
+                params: List[Any] = []
+                for idx, (key, value) in enumerate(defaults.items(), start=1):
+                    assignments.append(f"{key} = ${idx}")
+                    params.append(value)
+                assignments.append(f"updated_at = ${len(params) + 1}")
+                params.append(now)
+                params.append(guild_id)
+                await self._execute(
+                    f"UPDATE guild_notification_defaults SET {', '.join(assignments)} WHERE guild_id = ${len(params)}",
+                    tuple(params),
+                )
+        else:
+            # Insert new defaults
+            defaults.setdefault("created_at", now)
+            defaults["updated_at"] = now
+            columns = ["guild_id"] + list(defaults.keys())
+            placeholders = [f"${i+1}" for i in range(len(columns))]
+            values = [guild_id] + list(defaults.values())
+            await self._execute(
+                f"INSERT INTO guild_notification_defaults ({', '.join(columns)}) VALUES ({', '.join(placeholders)})",
+                tuple(values),
+            )
+
+    async def record_notification(
+        self,
+        user_id: int,
+        guild_id: int,
+        notification_type: str,
+        *,
+        task_id: Optional[int] = None,
+        delivery_method: Optional[str] = None,
+        notification_data: Optional[Dict[str, Any]] = None,
+    ) -> int:
+        """Record a sent notification in history."""
+        row = await self._execute(
+            """
+            INSERT INTO notification_history
+            (user_id, guild_id, task_id, notification_type, sent_at, delivery_method, notification_data)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            RETURNING id
+            """,
+            (
+                user_id,
+                guild_id,
+                task_id,
+                notification_type,
+                _utcnow(),
+                delivery_method,
+                json.dumps(notification_data or {}),
+            ),
+            fetchone=True,
+        )
+        return row["id"] if row else 0
+
+    async def check_notification_sent(
+        self,
+        user_id: int,
+        task_id: Optional[int],
+        notification_type: str,
+        *,
+        within_hours: int = 24,
+    ) -> bool:
+        """Check if a notification was recently sent to avoid duplicates."""
+        from datetime import datetime, timedelta, timezone
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=within_hours)).strftime(ISO_FORMAT)
+
+        # Handle NULL task_id for digests - use IS NOT DISTINCT FROM for proper NULL comparison
+        if task_id is None:
+            row = await self._execute(
+                """
+                SELECT COUNT(1) as count
+                FROM notification_history
+                WHERE user_id = $1 AND task_id IS NULL AND notification_type = $2 AND sent_at >= $3
+                """,
+                (user_id, notification_type, cutoff),
+                fetchone=True,
+            )
+        else:
+            row = await self._execute(
+                """
+                SELECT COUNT(1) as count
+                FROM notification_history
+                WHERE user_id = $1 AND task_id = $2 AND notification_type = $3 AND sent_at >= $4
+                """,
+                (user_id, task_id, notification_type, cutoff),
+                fetchone=True,
+            )
+        return bool(row and row["count"] > 0)
+
+    async def acknowledge_notification(self, notification_id: int) -> bool:
+        """Mark a notification as acknowledged/read."""
+        result = await self._execute(
+            "UPDATE notification_history SET acknowledged_at = $1 WHERE id = $2",
+            (_utcnow(), notification_id),
+            rowcount=True,
+        )
+        return bool(result)
+
+    async def snooze_reminder(
+        self,
+        user_id: int,
+        task_id: int,
+        notification_type: str,
+        snooze_until: str,
+    ) -> int:
+        """Snooze a reminder until a specific time."""
+        row = await self._execute(
+            """
+            INSERT INTO snoozed_reminders
+            (user_id, task_id, notification_type, snoozed_at, snooze_until, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            RETURNING id
+            """,
+            (user_id, task_id, notification_type, _utcnow(), snooze_until, _utcnow()),
+            fetchone=True,
+        )
+        return row["id"] if row else 0
+
+    async def get_due_snoozed_reminders(self) -> List[Dict[str, Any]]:
+        """Get snoozed reminders that are now due."""
+        rows = await self._execute(
+            """
+            SELECT
+                sr.id AS snooze_id,
+                sr.user_id,
+                sr.task_id,
+                sr.notification_type,
+                sr.snoozed_at,
+                sr.snooze_until,
+                t.title,
+                t.description,
+                t.due_date,
+                t.completed,
+                boards.channel_id,
+                boards.guild_id
+            FROM snoozed_reminders sr
+            JOIN tasks t ON sr.task_id = t.id
+            JOIN boards ON t.board_id = boards.id
+            WHERE sr.snooze_until <= $1
+            ORDER BY sr.snooze_until ASC
+            """,
+            (_utcnow(),),
+            fetchall=True,
+        )
+        return [dict(row) for row in rows or []]
+
+    async def delete_snoozed_reminder(self, snooze_id: int) -> bool:
+        """Delete a snoozed reminder after processing."""
+        result = await self._execute(
+            "DELETE FROM snoozed_reminders WHERE id = $1",
+            (snooze_id,),
+            rowcount=True,
+        )
+        return bool(result)
+
+    async def create_custom_reminder_rule(
+        self,
+        user_id: int,
+        guild_id: int,
+        rule_name: str,
+        rule_pattern: str,
+        rule_data: Dict[str, Any],
+        *,
+        board_id: Optional[int] = None,
+    ) -> int:
+        """Create a custom reminder rule."""
+        await self.ensure_guild(guild_id)
+        row = await self._execute(
+            """
+            INSERT INTO custom_reminder_rules
+            (user_id, guild_id, board_id, rule_name, rule_pattern, rule_data, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            RETURNING id
+            """,
+            (
+                user_id,
+                guild_id,
+                board_id,
+                rule_name,
+                rule_pattern,
+                json.dumps(rule_data),
+                _utcnow(),
+                _utcnow(),
+            ),
+            fetchone=True,
+        )
+        return row["id"] if row else 0
+
+    async def get_custom_reminder_rules(
+        self,
+        user_id: int,
+        guild_id: int,
+    ) -> List[Dict[str, Any]]:
+        """Get all custom reminder rules for a user in a guild."""
+        rows = await self._execute(
+            """
+            SELECT * FROM custom_reminder_rules
+            WHERE user_id = $1 AND guild_id = $2 AND enabled = TRUE
+            ORDER BY created_at DESC
+            """,
+            (user_id, guild_id),
+            fetchall=True,
+        )
+        return [dict(row) for row in rows or []]
 
     async def _execute(
         self,

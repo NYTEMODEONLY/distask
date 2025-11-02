@@ -1183,3 +1183,79 @@ class PastDueDateConfirmationView(discord.ui.View):
             ),
         )
         self.stop()
+
+
+class NotificationActionView(discord.ui.View):
+    """View with interactive buttons for notification actions."""
+
+    def __init__(
+        self,
+        *,
+        task_id: int,
+        notification_type: str,
+        timeout: float = 300.0,
+    ) -> None:
+        super().__init__(timeout=timeout)
+        self.task_id = task_id
+        self.notification_type = notification_type
+
+    @discord.ui.button(label="Snooze 1h", style=discord.ButtonStyle.secondary, emoji="⏰", custom_id="snooze_1h")
+    async def snooze_1h_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        """Snooze notification for 1 hour."""
+        from datetime import datetime, timedelta, timezone as dt_timezone
+        from utils.db import ISO_FORMAT
+
+        # Calculate snooze_until time
+        snooze_until = (datetime.now(dt_timezone.utc) + timedelta(hours=1)).strftime(ISO_FORMAT)
+
+        # Get database from bot
+        db = interaction.client.db
+
+        # Create snooze record
+        await db.snooze_reminder(
+            user_id=interaction.user.id,
+            task_id=self.task_id,
+            notification_type=self.notification_type,
+            snooze_until=snooze_until,
+        )
+
+        await interaction.response.send_message(
+            content="✅ Reminder snoozed for 1 hour",
+            ephemeral=True,
+        )
+        self.stop()
+
+    @discord.ui.button(label="Snooze 1d", style=discord.ButtonStyle.secondary, emoji="💤", custom_id="snooze_1d")
+    async def snooze_1d_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        """Snooze notification for 1 day."""
+        from datetime import datetime, timedelta, timezone as dt_timezone
+        from utils.db import ISO_FORMAT
+
+        # Calculate snooze_until time
+        snooze_until = (datetime.now(dt_timezone.utc) + timedelta(days=1)).strftime(ISO_FORMAT)
+
+        # Get database from bot
+        db = interaction.client.db
+
+        # Create snooze record
+        await db.snooze_reminder(
+            user_id=interaction.user.id,
+            task_id=self.task_id,
+            notification_type=self.notification_type,
+            snooze_until=snooze_until,
+        )
+
+        await interaction.response.send_message(
+            content="✅ Reminder snoozed for 1 day",
+            ephemeral=True,
+        )
+        self.stop()
+
+    @discord.ui.button(label="Mark as Read", style=discord.ButtonStyle.primary, emoji="✅", custom_id="mark_read")
+    async def mark_read_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        """Mark notification as read/acknowledged."""
+        await interaction.response.send_message(
+            content="✅ Notification marked as read",
+            ephemeral=True,
+        )
+        self.stop()

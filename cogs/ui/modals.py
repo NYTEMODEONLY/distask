@@ -620,15 +620,36 @@ class EditTaskModal(discord.ui.Modal):
 
         # PHASE 3: All validation passed - defer and apply all changes atomically
         await interaction.response.defer(thinking=True)
-        
+
+        # Track updated fields for notification
+        updated_fields = []
+        if assignee_ids_to_set is not None:
+            updated_fields.append("assignees")
+        updated_fields.extend(updates.keys())
+
         # Apply assignee changes (if any)
         if assignee_ids_to_set is not None:
             await self.db.set_task_assignees(self.task_id, assignee_ids_to_set)
-        
+
         # Apply other field updates
         if updates:
             await self.db.update_task(self.task_id, **updates)
-        
+
+        # Send event notification
+        if hasattr(interaction.client, "event_notifier") and interaction.guild_id:
+            # Get updated task and board info
+            updated_task = await self.db.fetch_task(self.task_id)
+            if updated_task:
+                board = await self.db.get_board(interaction.guild_id, updated_task["board_id"])
+                if board:
+                    await interaction.client.event_notifier.notify_task_updated(
+                        task=updated_task,
+                        updated_fields=updated_fields,
+                        updater_id=interaction.user.id,
+                        guild_id=interaction.guild_id,
+                        channel_id=board["channel_id"],
+                    )
+
         await interaction.followup.send(
             embed=self.embeds.message("Task Updated", f"Edits applied to task #{self.task_id}.", emoji="✨"),
         )
@@ -844,14 +865,27 @@ class AssignTaskModal(discord.ui.Modal):
 
         # Add assignees (they'll be added to existing ones)
         await self.db.add_task_assignees(task_id, assignee_ids)
-        
+
+        # Send event notification
+        if hasattr(interaction.client, "event_notifier"):
+            # Get updated task data
+            updated_task = await self.db.fetch_task(task_id)
+            if updated_task and board:
+                await interaction.client.event_notifier.notify_task_assigned(
+                    task=updated_task,
+                    assignee_ids=assignee_ids,
+                    assigner_id=interaction.user.id,
+                    guild_id=interaction.guild_id,
+                    channel_id=board["channel_id"],
+                )
+
         # Format success message
         if len(assignee_ids) == 1:
             message = f"Task #{task_id} now includes <@{assignee_ids[0]}> as an assignee."
         else:
             mentions = ", ".join([f"<@{uid}>" for uid in assignee_ids])
             message = f"Task #{task_id} now includes {mentions} as assignees."
-        
+
         await interaction.followup.send(
             embed=self.embeds.message("Task Assigned", message, emoji="👥"),
         )
@@ -918,3 +952,338 @@ class MoveTaskModal(discord.ui.Modal):
 
         # Task validated, pass to callback
         await self.on_task_validated(interaction, task_id, task)
+
+
+class NotificationPreferencesModal(discord.ui.Modal):
+    """Modal for configuring notification preferences."""
+
+    def __init__(
+        self,
+        *,
+        db: "Database",
+        embeds: "EmbedFactory",
+        pref_manager,
+        current_prefs: dict,
+    ) -> None:
+        super().__init__(title="Notification Preferences", timeout=300)
+        self.db = db
+        self.embeds = embeds
+        self.pref_manager = pref_manager
+        self.current_prefs = current_prefs
+
+        # Timezone input
+        self.timezone_input = discord.ui.TextInput(
+            label="Timezone",
+            placeholder="e.g., America/New_York, Europe/London, UTC",
+            default=current_prefs.get("timezone", "UTC"),
+            required=False,
+            style=discord.TextStyle.short,
+        )
+        self.add_item(self.timezone_input)
+
+        # Daily digest time
+        self.daily_digest_input = discord.ui.TextInput(
+            label="Daily Digest Time (HH:MM, empty to disable)",
+            placeholder="e.g., 09:00",
+            default=current_prefs.get("daily_digest_time", "09:00") if current_prefs.get("enable_daily_digest") else "",
+            required=False,
+            style=discord.TextStyle.short,
+        )
+        self.add_item(self.daily_digest_input)
+
+        # Quiet hours
+        self.quiet_hours_input = discord.ui.TextInput(
+            label="Quiet Hours (HH:MM-HH:MM, empty for none)",
+            placeholder="e.g., 22:00-08:00",
+            default=(
+                f"{current_prefs.get('quiet_hours_start', '')}-{current_prefs.get('quiet_hours_end', '')}"
+                if current_prefs.get("quiet_hours_start")
+                else ""
+            ),
+            required=False,
+            style=discord.TextStyle.short,
+        )
+        self.add_item(self.quiet_hours_input)
+
+        # Due date advance days
+        import json
+        advance_days = current_prefs.get("due_date_advance_days", [1])
+        advance_str = ",".join(str(d) for d in advance_days)
+
+        self.advance_days_input = discord.ui.TextInput(
+            label="Remind me X days before due date (comma-separated)",
+            placeholder="e.g., 1,3,7 for 1, 3, and 7 days before",
+            default=advance_str,
+            required=False,
+            style=discord.TextStyle.short,
+        )
+        self.add_item(self.advance_days_input)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        if not interaction.guild_id:
+            await interaction.response.send_message(
+                embed=self.embeds.message("Error", "Must be used in a guild", emoji="⚠️"),
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.defer(thinking=True)
+
+        # Parse and validate inputs
+        updates = {}
+
+        # Timezone
+        timezone_val = self.timezone_input.value.strip()
+        if timezone_val:
+            import pytz
+            try:
+                pytz.timezone(timezone_val)
+                updates["timezone"] = timezone_val
+            except pytz.UnknownTimeZoneError:
+                await interaction.followup.send(
+                    embed=self.embeds.message(
+                        "Invalid Timezone",
+                        f"Unknown timezone: {timezone_val}",
+                        emoji="⚠️",
+                    ),
+                    ephemeral=True,
+                )
+                return
+
+        # Daily digest time
+        daily_digest_val = self.daily_digest_input.value.strip()
+        if daily_digest_val:
+            from datetime import datetime
+            try:
+                datetime.strptime(daily_digest_val, "%H:%M")
+                updates["daily_digest_time"] = daily_digest_val
+                updates["enable_daily_digest"] = True
+            except ValueError:
+                await interaction.followup.send(
+                    embed=self.embeds.message(
+                        "Invalid Time",
+                        "Daily digest time must be in HH:MM format",
+                        emoji="⚠️",
+                    ),
+                    ephemeral=True,
+                )
+                return
+        else:
+            updates["enable_daily_digest"] = False
+
+        # Quiet hours
+        quiet_hours_val = self.quiet_hours_input.value.strip()
+        if quiet_hours_val and "-" in quiet_hours_val:
+            parts = quiet_hours_val.split("-")
+            if len(parts) == 2:
+                from datetime import datetime
+                try:
+                    start_time = parts[0].strip()
+                    end_time = parts[1].strip()
+                    datetime.strptime(start_time, "%H:%M")
+                    datetime.strptime(end_time, "%H:%M")
+                    updates["quiet_hours_start"] = start_time
+                    updates["quiet_hours_end"] = end_time
+                except ValueError:
+                    await interaction.followup.send(
+                        embed=self.embeds.message(
+                            "Invalid Time",
+                            "Quiet hours must be in HH:MM-HH:MM format",
+                            emoji="⚠️",
+                        ),
+                        ephemeral=True,
+                    )
+                    return
+        elif not quiet_hours_val:
+            # Clear quiet hours
+            updates["quiet_hours_start"] = None
+            updates["quiet_hours_end"] = None
+
+        # Due date advance days
+        advance_days_val = self.advance_days_input.value.strip()
+        if advance_days_val:
+            try:
+                days = [int(d.strip()) for d in advance_days_val.split(",")]
+                # Validate days are positive
+                if all(d > 0 for d in days):
+                    import json
+                    updates["due_date_advance_days"] = json.dumps(days)
+                else:
+                    await interaction.followup.send(
+                        embed=self.embeds.message(
+                            "Invalid Days",
+                            "Advance days must be positive numbers",
+                            emoji="⚠️",
+                        ),
+                        ephemeral=True,
+                    )
+                    return
+            except ValueError:
+                await interaction.followup.send(
+                    embed=self.embeds.message(
+                        "Invalid Format",
+                        "Advance days must be comma-separated numbers",
+                        emoji="⚠️",
+                    ),
+                    ephemeral=True,
+                )
+                return
+
+        # Save preferences
+        if updates:
+            await self.db.set_user_notification_prefs(
+                interaction.user.id,
+                interaction.guild_id,
+                **updates,
+            )
+
+        await interaction.followup.send(
+            embed=self.embeds.message(
+                "Preferences Updated",
+                "Your notification preferences have been saved successfully!",
+                emoji="✅",
+            ),
+        )
+
+
+class GuildNotificationDefaultsModal(discord.ui.Modal):
+    """Modal for configuring guild-wide notification defaults."""
+
+    def __init__(
+        self,
+        *,
+        db: "Database",
+        embeds: "EmbedFactory",
+        current_defaults: dict,
+    ) -> None:
+        super().__init__(title="Guild Notification Defaults", timeout=300)
+        self.db = db
+        self.embeds = embeds
+        self.current_defaults = current_defaults
+
+        # Default delivery method
+        self.delivery_method_input = discord.ui.TextInput(
+            label="Default Delivery Method",
+            placeholder="channel, channel_mention, or dm",
+            default=current_defaults.get("delivery_method", "channel"),
+            required=False,
+            style=discord.TextStyle.short,
+        )
+        self.add_item(self.delivery_method_input)
+
+        # Daily digest time
+        self.daily_digest_input = discord.ui.TextInput(
+            label="Default Daily Digest Time (HH:MM)",
+            placeholder="e.g., 09:00",
+            default=current_defaults.get("daily_digest_time", "09:00"),
+            required=False,
+            style=discord.TextStyle.short,
+        )
+        self.add_item(self.daily_digest_input)
+
+        # Due date advance days
+        import json
+        advance_days = current_defaults.get("due_date_advance_days", [1])
+        if isinstance(advance_days, str):
+            try:
+                advance_days = json.loads(advance_days)
+            except:
+                advance_days = [1]
+        advance_str = ",".join(str(d) for d in advance_days)
+
+        self.advance_days_input = discord.ui.TextInput(
+            label="Default Reminder Days Before Due Date",
+            placeholder="e.g., 1,3 for 1 and 3 days before",
+            default=advance_str,
+            required=False,
+            style=discord.TextStyle.short,
+        )
+        self.add_item(self.advance_days_input)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        if not interaction.guild_id:
+            await interaction.response.send_message(
+                embed=self.embeds.message("Error", "Must be used in a guild", emoji="⚠️"),
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.defer(thinking=True)
+
+        updates = {}
+
+        # Delivery method
+        delivery_method_val = self.delivery_method_input.value.strip()
+        if delivery_method_val:
+            valid_methods = {"channel", "channel_mention", "dm"}
+            if delivery_method_val in valid_methods:
+                updates["delivery_method"] = delivery_method_val
+            else:
+                await interaction.followup.send(
+                    embed=self.embeds.message(
+                        "Invalid Method",
+                        "Delivery method must be: channel, channel_mention, or dm",
+                        emoji="⚠️",
+                    ),
+                    ephemeral=True,
+                )
+                return
+
+        # Daily digest time
+        daily_digest_val = self.daily_digest_input.value.strip()
+        if daily_digest_val:
+            from datetime import datetime
+            try:
+                datetime.strptime(daily_digest_val, "%H:%M")
+                updates["daily_digest_time"] = daily_digest_val
+            except ValueError:
+                await interaction.followup.send(
+                    embed=self.embeds.message(
+                        "Invalid Time",
+                        "Daily digest time must be in HH:MM format",
+                        emoji="⚠️",
+                    ),
+                    ephemeral=True,
+                )
+                return
+
+        # Due date advance days
+        advance_days_val = self.advance_days_input.value.strip()
+        if advance_days_val:
+            try:
+                days = [int(d.strip()) for d in advance_days_val.split(",")]
+                if all(d > 0 for d in days):
+                    import json
+                    updates["due_date_advance_days"] = json.dumps(days)
+                else:
+                    await interaction.followup.send(
+                        embed=self.embeds.message(
+                            "Invalid Days",
+                            "Advance days must be positive numbers",
+                            emoji="⚠️",
+                        ),
+                        ephemeral=True,
+                    )
+                    return
+            except ValueError:
+                await interaction.followup.send(
+                    embed=self.embeds.message(
+                        "Invalid Format",
+                        "Advance days must be comma-separated numbers",
+                        emoji="⚠️",
+                    ),
+                    ephemeral=True,
+                )
+                return
+
+        # Save guild defaults
+        if updates:
+            await self.db.set_guild_notification_defaults(interaction.guild_id, **updates)
+
+        await interaction.followup.send(
+            embed=self.embeds.message(
+                "Guild Defaults Updated",
+                "Guild-wide notification defaults have been saved. Users can still override these with their own preferences.",
+                emoji="✅",
+            ),
+        )
