@@ -76,7 +76,8 @@ class DisTaskBot(commands.Bot):
         self.logger = logging.getLogger("distask.bot")
         self.db = Database(config["database_url"], default_reminder=config["reminder_time"])
         self.embeds = EmbedFactory()
-        self.reminders = ReminderScheduler(self, self.db, self.embeds, logging.getLogger("distask.reminders"))
+        # Legacy reminder system - disabled in favor of EnhancedScheduler
+        # self.reminders = ReminderScheduler(self, self.db, self.embeds, logging.getLogger("distask.reminders"))
 
         # Initialize enhanced notification system
         self.pref_manager = PreferenceManager(self.db)
@@ -94,7 +95,7 @@ class DisTaskBot(commands.Bot):
         await self.add_cog(self._build_admin_cog())
         await self.add_cog(self._build_notifications_cog())
         await self.tree.sync()
-        await self.reminders.start()
+        # await self.reminders.start()  # Disabled - using EnhancedScheduler instead
         await self.enhanced_scheduler.start()
         self.logger.info("Slash commands synced.")
         self.logger.info("Enhanced notification system started.")
@@ -107,7 +108,7 @@ class DisTaskBot(commands.Bot):
         await self.db.set_reminder_time(guild.id, self.config["reminder_time"])
 
     async def close(self) -> None:
-        await self.reminders.stop()
+        # await self.reminders.stop()  # Disabled - using EnhancedScheduler instead
         await self.enhanced_scheduler.stop()
         await self.db.close()
         await super().close()
