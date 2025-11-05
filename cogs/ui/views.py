@@ -1186,24 +1186,38 @@ class PastDueDateConfirmationView(discord.ui.View):
 
 
 class NotificationActionView(discord.ui.View):
-    """View with interactive buttons for notification actions."""
+    """View with interactive buttons for notification actions.
+
+    This view is persistent (no timeout) so buttons work indefinitely.
+    Custom IDs encode task_id for proper state reconstruction.
+    """
 
     def __init__(
         self,
         *,
         task_id: int,
         notification_type: str,
-        timeout: float = 300.0,
+        timeout: float | None = None,
     ) -> None:
         super().__init__(timeout=timeout)
         self.task_id = task_id
         self.notification_type = notification_type
+
+        # Update button custom_ids to include task info for persistence
+        for item in self.children:
+            if isinstance(item, discord.ui.Button):
+                if hasattr(item, 'custom_id') and item.custom_id:
+                    # Encode task_id and type into custom_id
+                    item.custom_id = f"{item.custom_id.split(':')[0]}:{task_id}:{notification_type}"
 
     @discord.ui.button(label="Snooze 1h", style=discord.ButtonStyle.secondary, emoji="⏰", custom_id="snooze_1h")
     async def snooze_1h_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         """Snooze notification for 1 hour."""
         from datetime import datetime, timedelta, timezone as dt_timezone
         from utils.db import ISO_FORMAT
+
+        # Parse task_id from custom_id
+        task_id, notification_type = self._parse_custom_id(button.custom_id)
 
         # Calculate snooze_until time
         snooze_until = (datetime.now(dt_timezone.utc) + timedelta(hours=1)).strftime(ISO_FORMAT)
@@ -1214,8 +1228,8 @@ class NotificationActionView(discord.ui.View):
         # Create snooze record
         await db.snooze_reminder(
             user_id=interaction.user.id,
-            task_id=self.task_id,
-            notification_type=self.notification_type,
+            task_id=task_id,
+            notification_type=notification_type,
             snooze_until=snooze_until,
         )
 
@@ -1231,6 +1245,9 @@ class NotificationActionView(discord.ui.View):
         from datetime import datetime, timedelta, timezone as dt_timezone
         from utils.db import ISO_FORMAT
 
+        # Parse task_id from custom_id
+        task_id, notification_type = self._parse_custom_id(button.custom_id)
+
         # Calculate snooze_until time
         snooze_until = (datetime.now(dt_timezone.utc) + timedelta(days=1)).strftime(ISO_FORMAT)
 
@@ -1240,8 +1257,8 @@ class NotificationActionView(discord.ui.View):
         # Create snooze record
         await db.snooze_reminder(
             user_id=interaction.user.id,
-            task_id=self.task_id,
-            notification_type=self.notification_type,
+            task_id=task_id,
+            notification_type=notification_type,
             snooze_until=snooze_until,
         )
 
@@ -1259,3 +1276,14 @@ class NotificationActionView(discord.ui.View):
             ephemeral=True,
         )
         self.stop()
+
+    def _parse_custom_id(self, custom_id: str) -> tuple[int, str]:
+        """Parse task_id and notification_type from custom_id.
+
+        Format: action:task_id:notification_type
+        """
+        parts = custom_id.split(":")
+        if len(parts) >= 3:
+            return int(parts[1]), parts[2]
+        # Fallback to instance variables
+        return self.task_id, self.notification_type

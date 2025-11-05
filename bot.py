@@ -89,6 +89,12 @@ class DisTaskBot(commands.Bot):
 
     async def setup_hook(self) -> None:
         await self.db.init()
+
+        # Register persistent views for notification buttons
+        from cogs.ui.views import NotificationActionView
+        # Add a persistent view with dummy values - the custom_id parsing handles actual task_id
+        self.add_view(NotificationActionView(task_id=0, notification_type="persistent"))
+
         await self.add_cog(self._build_boards_cog())
         await self.add_cog(self._build_tasks_cog())
         await self.add_cog(self._build_features_cog())
