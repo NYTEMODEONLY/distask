@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
 
@@ -89,25 +88,42 @@ class ReminderScheduler:
         return last_run != now.date().isoformat()
 
     async def _dispatch_guild(self, guild_id: int, tasks: List[Dict[str, Any]]) -> None:
-        grouped: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
-        for task in tasks:
-            if task["guild_id"] != guild_id:
-                continue
-            grouped[task["channel_id"]].append(task)
-        if not grouped:
+        # Collect all tasks for this guild (not grouped by channel)
+        guild_tasks = [task for task in tasks if task["guild_id"] == guild_id]
+        if not guild_tasks:
             return
-        for channel_id, channel_tasks in grouped.items():
-            channel = self.bot.get_channel(channel_id)
-            if channel is None:
-                try:
-                    channel = await self.bot.fetch_channel(channel_id)
-                except discord.HTTPException:
-                    self.logger.warning("Cannot access channel %s for reminders", channel_id)
-                    continue
-            if not isinstance(channel, discord.abc.Messageable):
-                continue
+        
+        # Get the first board for this guild to use its channel for the digest
+        boards = await self.db.fetch_boards(guild_id)
+        if not boards:
+            self.logger.warning("No boards found for guild %s, skipping reminder digest", guild_id)
+            return
+        
+        # Use the first board's channel (most recently created)
+        target_channel_id = boards[0]["channel_id"]
+        
+        # Get the guild object to get the guild name
+        guild = self.bot.get_guild(guild_id)
+        if guild is None:
+            self.logger.warning("Cannot access guild %s for reminders", guild_id)
+            return
+        
+        # Fetch the target channel
+        channel = self.bot.get_channel(target_channel_id)
+        if channel is None:
             try:
-                embed = self.embed_factory.reminder_digest(channel.guild.name, channel_tasks)
-                await channel.send(embed=embed)
-            except discord.HTTPException as exc:
-                self.logger.warning("Failed to send reminder to channel %s: %s", channel_id, exc)
+                channel = await self.bot.fetch_channel(target_channel_id)
+            except discord.HTTPException:
+                self.logger.warning("Cannot access channel %s for reminders", target_channel_id)
+                return
+        
+        if not isinstance(channel, discord.abc.Messageable):
+            self.logger.warning("Channel %s is not messageable for reminders", target_channel_id)
+            return
+        
+        # Send a single digest with all tasks for the guild
+        try:
+            embed = self.embed_factory.reminder_digest(guild.name, guild_tasks)
+            await channel.send(embed=embed)
+        except discord.HTTPException as exc:
+            self.logger.warning("Failed to send reminder to channel %s: %s", target_channel_id, exc)

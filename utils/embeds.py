@@ -467,6 +467,15 @@ class EmbedFactory:
             inline=True,
         )
         
+        # Completion notes if task is completed
+        completion_notes = task.get("completion_notes")
+        if completed and completion_notes:
+            embed.add_field(
+                name="📝 Completion Notes",
+                value=completion_notes,
+                inline=False,
+            )
+        
         return self._finalize(embed)
 
     def search_results(self, query: str, tasks: List[Dict[str, Any]]) -> discord.Embed:

@@ -940,12 +940,58 @@ class TaskActionsView(discord.ui.View):
     @discord.ui.button(label="✅ Mark Complete", style=discord.ButtonStyle.green, custom_id="complete")
     async def complete_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         new_status = not self.task.get("completed", False)
+        
+        # If marking complete, show notes modal; if marking incomplete, just toggle
+        if new_status:
+            from .modals import CompletionNotesModal
+            
+            async def on_complete(interaction: discord.Interaction, notes: Optional[str]) -> None:
+                await interaction.response.defer(thinking=True)
+                await self.db.toggle_complete(self.task_id, True, completion_notes=notes)
+                status_msg = f"Task #{self.task_id} completed."
+                if notes:
+                    status_msg += f"\n\n📝 Notes: {notes}"
+                await interaction.followup.send(
+                    embed=self.embeds.message("Task Completed", status_msg, emoji="✅"),
+                )
+                self.stop()
+            
+            modal = CompletionNotesModal(
+                task_id=self.task_id,
+                db=self.db,
+                embeds=self.embeds,
+                on_complete=on_complete,
+            )
+            await interaction.response.send_modal(modal)
+        else:
+            await interaction.response.defer(thinking=True)
+            await self.db.toggle_complete(self.task_id, False)
+            await interaction.followup.send(
+                embed=self.embeds.message("Task Status", f"Task #{self.task_id} reopened.", emoji="↩️"),
+            )
+            self.stop()
+
+    @discord.ui.button(label="👤 Self Assign", style=discord.ButtonStyle.primary, custom_id="self_assign", row=1)
+    async def self_assign_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        user_id = interaction.user.id
         await interaction.response.defer(thinking=True)
-        await self.db.toggle_complete(self.task_id, new_status)
-        status = "completed" if new_status else "reopened"
-        emoji = "✅" if new_status else "↩️"
+        
+        # Get current assignees
+        current_assignees = self.task.get("assignee_ids", [])
+        if not isinstance(current_assignees, list):
+            current_assignees = []
+        
+        # Check if already assigned
+        if user_id in current_assignees:
+            await interaction.followup.send(
+                embed=self.embeds.message("Already Assigned", f"You are already assigned to task #{self.task_id}.", emoji="ℹ️"),
+            )
+            return
+        
+        # Add user as assignee
+        await self.db.add_task_assignees(self.task_id, [user_id])
         await interaction.followup.send(
-            embed=self.embeds.message("Task Status", f"Task #{self.task_id} {status}.", emoji=emoji),
+            embed=self.embeds.message("Self Assigned", f"You have been assigned to task #{self.task_id}.", emoji="👤"),
         )
         self.stop()
 

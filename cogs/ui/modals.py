@@ -857,6 +857,31 @@ class AssignTaskModal(discord.ui.Modal):
         )
 
 
+class CompletionNotesModal(discord.ui.Modal):
+    """Modal for adding completion notes when marking a task complete."""
+
+    def __init__(self, *, task_id: int, db: "Database", embeds: "EmbedFactory", on_complete: Callable) -> None:
+        super().__init__(title="Complete Task", timeout=300)
+        self.task_id = task_id
+        self.db = db
+        self.embeds = embeds
+        self.on_complete = on_complete
+
+        self.notes_input = discord.ui.TextInput(
+            label="Completion Notes (Optional)",
+            placeholder="Add any notes about completing this task...",
+            required=False,
+            style=discord.TextStyle.paragraph,
+            max_length=1000,
+        )
+        self.add_item(self.notes_input)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        notes = self.notes_input.value.strip() if self.notes_input.value else None
+        await self.on_complete(interaction, notes)
+        self.stop()
+
+
 class MoveTaskModal(discord.ui.Modal):
     """Modal for entering task ID before moving."""
 
