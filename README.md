@@ -9,6 +9,8 @@ DisTask is a production-ready Discord bot that provides lightweight kanban board
 - ✅ **Custom columns** beyond the To Do / In Progress / Done defaults
 - ✅ **Task lifecycle tools**: assign, move, edit, complete, delete, and full-text search
 - ✅ **Multiple assignees**: Assign multiple users to a single task (FR-17)
+- ✅ **Quick board creation**: Create boards directly from empty state (FR-7)
+- ✅ **Self-assign button**: One-click self-assignment to tasks (FR-9)
 - ✅ **Due dates + reminders**: background worker posts daily digests to board channels
 - ✅ **Feature requests**: `/request-feature` modal logs ideas and syncs them to GitHub
 - ✅ **Community voting**: submissions auto-post to the DisTask community server with 👍 / 👎 / 🔁 reactions to drive prioritisation
@@ -30,7 +32,8 @@ distask/
 │   ├── boards.py        # /create-board, /list-boards, etc.
 │   ├── tasks.py         # /add-task, /move-task, /search-task, ...
 │   ├── admin.py         # /add-column, /toggle-notifications, ...
-│   └── features.py      # /request-feature modal + GitHub export trigger
+│   ├── features.py      # /request-feature modal + GitHub export trigger
+│   └── info.py          # /version, /support - bot information and support
 ├── utils/               # Shared helpers
 │   ├── db.py            # Async PostgreSQL wrapper + schema management
 │   ├── embeds.py        # Embed builders
@@ -99,6 +102,8 @@ distask/
 |        | `/set-reminder` | Set daily reminder time (HH:MM UTC) | Manage Guild |
 |        | `/distask-help` | Summary of commands | — |
 | Feedback | `/request-feature` | Submit feature ideas via modal; syncs to GitHub | — |
+| Info   | `/version` | View bot version, uptime, and release notes | — |
+|        | `/support` | Support the project via GitHub Sponsors or PayPal | — |
 
 Additional behavior:
 

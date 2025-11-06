@@ -167,6 +167,32 @@ def pull_changes(branch: str) -> bool:
         return False
 
 
+def install_dependencies() -> bool:
+    """Install/update Python dependencies from requirements.txt."""
+    venv_python = ROOT_DIR / ".venv" / "bin" / "python"
+    if not venv_python.exists():
+        logger.warning("Virtual environment not found, skipping dependency install")
+        return True  # Not a fatal error
+
+    try:
+        result = subprocess.run(
+            [str(venv_python), "-m", "pip", "install", "-r", "requirements.txt", "--quiet"],
+            cwd=ROOT_DIR,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=300,  # 5 minutes for dependency installation
+        )
+        logger.info("Dependencies installed/updated successfully")
+        return True
+    except subprocess.TimeoutExpired:
+        logger.error("Dependency installation timed out after 300 seconds")
+        return False
+    except subprocess.CalledProcessError as e:
+        logger.error("Failed to install dependencies: %s", e.stderr if e.stderr else str(e))
+        return False
+
+
 def restart_service(service_name: str) -> bool:
     """Restart a systemd service."""
     try:
@@ -264,13 +290,18 @@ def perform_sync(dry_run: bool = False, poll_mode: bool = False) -> bool:
     if not pull_changes(branch):
         logger.error("Failed to pull changes")
         return False
-    
+
+    # Install/update dependencies
+    if not install_dependencies():
+        logger.error("Failed to install dependencies, but continuing with restart")
+        # Don't return False - we want to restart services even if pip install fails
+
     # Restart services
     sync_services()
-    
+
     # Update last sync time
     update_last_sync_time()
-    
+
     logger.info("Git sync completed successfully")
     return True
 
