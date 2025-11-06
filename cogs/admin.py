@@ -75,7 +75,7 @@ class AdminCog(commands.Cog):
     @app_commands.checks.has_permissions(manage_channels=True)
     @app_commands.checks.cooldown(1, 3.0)
     async def add_column(self, interaction: discord.Interaction) -> None:
-        from .ui import BoardSelectorView, AddColumnModal
+        from .ui import BoardSelectorView, AddColumnModal, QuickCreateBoardView
         from .ui.helpers import get_board_choices
 
         if not interaction.guild_id:
@@ -89,12 +89,18 @@ class AdminCog(commands.Cog):
         # Check if there are any boards first
         board_options = await get_board_choices(self.db, interaction.guild_id)
         if not board_options:
+            view = QuickCreateBoardView(
+                guild_id=interaction.guild_id,
+                db=self.db,
+                embeds=self.embeds,
+            )
             await interaction.response.send_message(
                 embed=self.embeds.message(
                     "No Boards",
-                    "This server has no boards yet. Create one with `/create-board`.",
+                    "This server has no boards yet. Create one to get started!",
                     emoji="📭",
                 ),
+                view=view,
             )
             return
 

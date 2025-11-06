@@ -26,7 +26,9 @@ from .views import (
     NotificationActionView,
     NotificationToggleView,
     PastDueDateConfirmationView,
+    QuickCreateBoardView,
     RemoveColumnConfirmationView,
+    SelfAssignTaskView,
     TaskActionsView,
 )
 
@@ -51,9 +53,11 @@ __all__ = [
     "NotificationPreferencesModal",
     "NotificationToggleView",
     "PastDueDateConfirmationView",
+    "QuickCreateBoardView",
     "RemoveColumnConfirmationView",
     "ReminderTimeModal",
     "SearchTaskModal",
+    "SelfAssignTaskView",
     "TaskActionsView",
     "TaskIDInputModal",
 ]
