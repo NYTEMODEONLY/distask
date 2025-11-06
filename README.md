@@ -9,6 +9,8 @@ DisTask is a production-ready Discord bot that provides lightweight kanban board
 - ✅ **Custom columns** beyond the To Do / In Progress / Done defaults
 - ✅ **Task lifecycle tools**: assign, move, edit, complete, delete, and full-text search
 - ✅ **Multiple assignees**: Assign multiple users to a single task (FR-17)
+- ✅ **Quick board creation**: Create boards directly from empty state (FR-7)
+- ✅ **Self-assign button**: One-click self-assignment to tasks (FR-9)
 - ✅ **Due dates + reminders**: background worker posts daily digests to board channels
 - ✅ **Feature requests**: `/request-feature` modal logs ideas and syncs them to GitHub
 - ✅ **Community voting**: submissions auto-post to the DisTask community server with 👍 / 👎 / 🔁 reactions to drive prioritisation
