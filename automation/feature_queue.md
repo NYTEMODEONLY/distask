@@ -7,7 +7,5 @@
 | 5 | 9 | React to self assign a task | 10.0 | 5.0 | 5.0 | 0 | pending | - | - |
 | 6 | 10 | Task Completion | 10.0 | 5.0 | 5.0 | 0 | pending | - | - |
 | 7 | 11 | Task Completion Notes | 10.0 | 5.0 | 5.0 | 0 | pending | - | - |
-| 8 | 13 | Version and release notes | 10.0 | 5.0 | 5.0 | 0 | pending | - | - |
-| 9 | 14 | Tip the creator | 10.0 | 5.0 | 5.0 | 0 | pending | - | - |
-| 10 | 15 | Add rewards for completing a task | 10.0 | 5.0 | 5.0 | 0 | pending | - | - |
-| 11 | 16 | recover deleted tasks | 10.0 | 5.0 | 5.0 | 0 | pending | - | - |
+| 8 | 15 | Add rewards for completing a task | 10.0 | 5.0 | 5.0 | 0 | pending | - | - |
+| 9 | 16 | recover deleted tasks | 10.0 | 5.0 | 5.0 | 0 | pending | - | - |
