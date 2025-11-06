@@ -72,7 +72,8 @@ class Database:
                     due_date TEXT,
                     created_by BIGINT,
                     created_at TEXT NOT NULL,
-                    completed BOOLEAN NOT NULL DEFAULT FALSE
+                    completed BOOLEAN NOT NULL DEFAULT FALSE,
+                    completion_notes TEXT
                 )
                 """,
                 """
@@ -123,6 +124,7 @@ class Database:
                 "ALTER TABLE feature_requests ADD COLUMN IF NOT EXISTS community_upvotes INTEGER NOT NULL DEFAULT 0",
                 "ALTER TABLE feature_requests ADD COLUMN IF NOT EXISTS community_downvotes INTEGER NOT NULL DEFAULT 0",
                 "ALTER TABLE feature_requests ADD COLUMN IF NOT EXISTS community_duplicate_votes INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completion_notes TEXT",
                 # Migrate existing assignee_id values to task_assignees table (one-time migration)
                 """
                 INSERT INTO task_assignees (task_id, user_id, assigned_at)
@@ -805,8 +807,14 @@ class Database:
     async def move_task(self, task_id: int, column_id: int) -> bool:
         return await self.update_task(task_id, column_id=column_id)
 
-    async def toggle_complete(self, task_id: int, completed: bool) -> bool:
-        return await self.update_task(task_id, completed=completed)
+    async def toggle_complete(self, task_id: int, completed: bool, completion_notes: Optional[str] = None) -> bool:
+        updates = {"completed": completed}
+        if completed and completion_notes:
+            updates["completion_notes"] = completion_notes
+        elif not completed:
+            # Clear notes when marking incomplete
+            updates["completion_notes"] = None
+        return await self.update_task(task_id, **updates)
 
     async def create_feature_request(
         self,

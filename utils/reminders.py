@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
 
@@ -89,13 +88,28 @@ class ReminderScheduler:
         return last_run != now.date().isoformat()
 
     async def _dispatch_guild(self, guild_id: int, tasks: List[Dict[str, Any]]) -> None:
+        # Group tasks by channel_id to respect privacy boundaries
+        # Each board's tasks should only be sent to that board's channel
+        # This ensures private channel boards don't leak tasks to other channels
+        from collections import defaultdict
         grouped: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
         for task in tasks:
             if task["guild_id"] != guild_id:
                 continue
             grouped[task["channel_id"]].append(task)
+        
         if not grouped:
             return
+        
+        # Get the guild object to get the guild name
+        guild = self.bot.get_guild(guild_id)
+        if guild is None:
+            self.logger.warning("Cannot access guild %s for reminders", guild_id)
+            return
+        
+        # Send one digest per channel (respecting privacy boundaries)
+        # Each channel receives only tasks from boards in that channel
+        # This prevents private board tasks from leaking to public channels
         for channel_id, channel_tasks in grouped.items():
             channel = self.bot.get_channel(channel_id)
             if channel is None:
@@ -104,10 +118,14 @@ class ReminderScheduler:
                 except discord.HTTPException:
                     self.logger.warning("Cannot access channel %s for reminders", channel_id)
                     continue
+            
             if not isinstance(channel, discord.abc.Messageable):
                 continue
+            
+            # Send a single digest for this channel's tasks only
+            # This ensures privacy: each channel only sees tasks from its own boards
             try:
-                embed = self.embed_factory.reminder_digest(channel.guild.name, channel_tasks)
+                embed = self.embed_factory.reminder_digest(guild.name, channel_tasks)
                 await channel.send(embed=embed)
             except discord.HTTPException as exc:
                 self.logger.warning("Failed to send reminder to channel %s: %s", channel_id, exc)
