@@ -388,11 +388,12 @@ class AdminCog(commands.Cog):
         tasks_commands = (
             "`/add-task` [Server] - Create a new task on a board\n"
             "`/list-tasks` [Server] - List tasks on a board\n"
-            "`/move-task` [Server] - Move a task to another column\n"
-            "`/assign-task` [Server] - Assign a task to a member\n"
+            "`/move-task` [Server] - Move a task to another column (select menu)\n"
+            "`/assign-task` [Server] - Assign a task to a member (select menu)\n"
             "`/edit-task` [Server] - Update details for a task\n"
             "`/complete-task` [Server] - Mark a task complete/incomplete\n"
-            "`/delete-task` [Server] - Remove a task\n"
+            "`/delete-task` [Server] - Remove a task (select menu, recoverable)\n"
+            "`/recover-task` [Server] - Recover a deleted task\n"
             "`/search-task` [Server] - Full-text search across tasks"
         )
         embed.add_field(
