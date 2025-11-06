@@ -30,7 +30,8 @@ distask/
 │   ├── boards.py        # /create-board, /list-boards, etc.
 │   ├── tasks.py         # /add-task, /move-task, /search-task, ...
 │   ├── admin.py         # /add-column, /toggle-notifications, ...
-│   └── features.py      # /request-feature modal + GitHub export trigger
+│   ├── features.py      # /request-feature modal + GitHub export trigger
+│   └── info.py          # /version, /support - bot information and support
 ├── utils/               # Shared helpers
 │   ├── db.py            # Async PostgreSQL wrapper + schema management
 │   ├── embeds.py        # Embed builders
@@ -99,6 +100,8 @@ distask/
 |        | `/set-reminder` | Set daily reminder time (HH:MM UTC) | Manage Guild |
 |        | `/distask-help` | Summary of commands | — |
 | Feedback | `/request-feature` | Submit feature ideas via modal; syncs to GitHub | — |
+| Info   | `/version` | View bot version, uptime, and release notes | — |
+|        | `/support` | Support the project via GitHub Sponsors or PayPal | — |
 
 Additional behavior:
 
