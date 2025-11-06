@@ -1427,7 +1427,33 @@ class MoveTaskFlowView(discord.ui.View):
         # Show column selector
         async def on_column_selected(col_inter: discord.Interaction, column_id: int, column: dict) -> None:
             await col_inter.response.defer(thinking=True)
+            
+            # Get original column name for notification
+            old_column = await self.db.get_column_by_id(task["column_id"])
+            old_column_name = old_column["name"] if old_column else "Unknown"
+            
+            # Move task
             await self.db.move_task(task_id, column_id)
+            
+            # Send event notification if available
+            if hasattr(col_inter.client, "event_notifier") and col_inter.guild_id:
+                try:
+                    # Get updated task data
+                    updated_task = await self.db.fetch_task(task_id)
+                    board = await self.db.get_board(col_inter.guild_id, task["board_id"])
+                    if updated_task and board:
+                        await col_inter.client.event_notifier.notify_task_moved(
+                            task=updated_task,
+                            from_column=old_column_name,
+                            to_column=column["name"],
+                            mover_id=col_inter.user.id,
+                            guild_id=col_inter.guild_id,
+                            channel_id=board["channel_id"],
+                        )
+                except Exception:
+                    # Don't fail the operation if notifications fail
+                    pass
+            
             await col_inter.followup.send(
                 embed=self.embeds.message("Task Moved", f"Task #{task_id} → **{column['name']}**", emoji="🧭"),
             )
@@ -1579,30 +1605,6 @@ class AssignTaskFlowView(discord.ui.View):
         # Show user select for assigning
         from .helpers import parse_user_mention_or_id
         
-        async def on_user_selected(user_inter: discord.Interaction, user_select: discord.ui.UserSelect) -> None:
-            if not user_select.values:
-                await user_inter.response.send_message(
-                    embed=self.embeds.message("No Users Selected", "Please select at least one user.", emoji="⚠️"),
-                )
-                return
-
-            assignee_ids = [user.id for user in user_select.values]
-            await user_inter.response.defer(thinking=True)
-            
-            # Add assignees (they'll be added to existing ones)
-            await self.db.add_task_assignees(task_id, assignee_ids)
-            
-            # Format success message
-            if len(assignee_ids) == 1:
-                message = f"Task #{task_id} now includes <@{assignee_ids[0]}> as an assignee."
-            else:
-                mentions = ", ".join([f"<@{uid}>" for uid in assignee_ids])
-                message = f"Task #{task_id} now includes {mentions} as assignees."
-            
-            await user_inter.followup.send(
-                embed=self.embeds.message("Task Assigned", message, emoji="👥"),
-            )
-
         # Create user select
         user_select = discord.ui.UserSelect(
             placeholder="Select user(s) to assign...",
@@ -1610,6 +1612,52 @@ class AssignTaskFlowView(discord.ui.View):
             max_values=10,
             row=2,
         )
+        
+        async def on_user_selected(user_inter: discord.Interaction) -> None:
+            # UserSelect callbacks only receive the interaction
+            # Access selected users via interaction.data['values'] or the select component
+            if not user_inter.data or "values" not in user_inter.data:
+                await user_inter.response.send_message(
+                    embed=self.embeds.message("No Users Selected", "Please select at least one user.", emoji="⚠️"),
+                )
+                return
+            
+            # Get selected user IDs from interaction data
+            selected_user_ids = [int(uid) for uid in user_inter.data.get("values", [])]
+            if not selected_user_ids:
+                await user_inter.response.send_message(
+                    embed=self.embeds.message("No Users Selected", "Please select at least one user.", emoji="⚠️"),
+                )
+                return
+            
+            await user_inter.response.defer(thinking=True)
+            
+            # Add assignees (they'll be added to existing ones)
+            await self.db.add_task_assignees(task_id, selected_user_ids)
+            
+            # Send event notification if available
+            if hasattr(user_inter.client, "event_notifier") and user_inter.guild_id:
+                try:
+                    await user_inter.client.event_notifier.notify_task_assigned(
+                        task_id=task_id,
+                        assignee_ids=selected_user_ids,
+                        assigned_by_id=user_inter.user.id,
+                    )
+                except Exception:
+                    # Don't fail the operation if notifications fail
+                    pass
+            
+            # Format success message
+            if len(selected_user_ids) == 1:
+                message = f"Task #{task_id} now includes <@{selected_user_ids[0]}> as an assignee."
+            else:
+                mentions = ", ".join([f"<@{uid}>" for uid in selected_user_ids])
+                message = f"Task #{task_id} now includes {mentions} as assignees."
+            
+            await user_inter.followup.send(
+                embed=self.embeds.message("Task Assigned", message, emoji="👥"),
+            )
+        
         user_select.callback = on_user_selected
         
         view = discord.ui.View(timeout=300.0)
