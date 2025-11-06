@@ -45,7 +45,12 @@ tail -f logs/distask.log  # Stream structured logs
 - `Database` class wraps `asyncpg.Pool` and provides async helpers for all CRUD operations.
 - Schema has cascading foreign keys: `guilds` → `boards` → `columns`/`tasks` and `guilds` → `feature_requests`.
 - Tables: `guilds`, `boards`, `columns`, `tasks`, `feature_requests`.
+- Tasks table includes `deleted_at` field for soft delete functionality.
 - Methods follow pattern: `create_*`, `get_*`, `update_*`, `delete_*`, `list_*`.
+- `delete_task()` performs soft delete (sets `deleted_at` timestamp).
+- `recover_task()` restores soft-deleted tasks by clearing `deleted_at`.
+- `fetch_deleted_tasks()` retrieves soft-deleted tasks for recovery.
+- All normal queries (`fetch_tasks`, `fetch_task`, `fetch_due_tasks`, `search_tasks`) automatically filter out deleted tasks.
 - `ensure_guild()` creates a guild row if missing; called on bot startup and guild join.
 - Default columns (To Do, In Progress, Done) are created with each new board.
 
@@ -57,8 +62,10 @@ Cogs are loaded in `bot.py` via `_build_*_cog()` methods:
   - Enforces `Manage Guild` permission for create/delete
 
 - **`cogs/tasks.py`** (`TasksCog`): Task CRUD and management
-  - `/add-task`, `/list-tasks`, `/move-task`, `/assign-task`, `/edit-task`, `/complete-task`, `/delete-task`, `/search-task`
+  - `/add-task`, `/list-tasks`, `/move-task`, `/assign-task`, `/edit-task`, `/complete-task`, `/delete-task`, `/recover-task`, `/search-task`
   - Supports due dates, assignees, full-text search, filtering by column/assignee/completion
+  - Uses select menu flows for move/assign/delete (no task ID input required)
+  - Soft delete with recovery: deleted tasks marked with `deleted_at`, recoverable via `/recover-task`
 
 - **`cogs/admin.py`** (`AdminCog`): Guild and board administration
   - `/add-column`, `/remove-column`, `/toggle-notifications`, `/set-reminder`, `/distask-help`

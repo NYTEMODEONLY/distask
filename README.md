@@ -11,6 +11,9 @@ DisTask is a production-ready Discord bot that provides lightweight kanban board
 - ✅ **Multiple assignees**: Assign multiple users to a single task (FR-17)
 - ✅ **Quick board creation**: Create boards directly from empty state (FR-7)
 - ✅ **Self-assign button**: One-click self-assignment to tasks (FR-9)
+- ✅ **Task completion notes**: Add notes when marking tasks complete (FR-11)
+- ✅ **Easier task editing**: Select menus instead of remembering task IDs (FR-8)
+- ✅ **Task recovery**: Recover accidentally deleted tasks with soft delete (FR-16)
 - ✅ **Due dates + reminders**: background worker posts daily digests to board channels
 - ✅ **Feature requests**: `/request-feature` modal logs ideas and syncs them to GitHub
 - ✅ **Community voting**: submissions auto-post to the DisTask community server with 👍 / 👎 / 🔁 reactions to drive prioritisation
@@ -90,11 +93,12 @@ distask/
 |        | `/board-stats` | Quick stats for a board | — |
 | Tasks  | `/add-task` | Create a task with optional due date + assignee | — |
 |        | `/list-tasks` | Filter tasks by column/assignee/completion | — |
-|        | `/move-task` | Move a task between columns | — |
-|        | `/assign-task` | Assign to a member | — |
+|        | `/move-task` | Move a task between columns (select menu flow) | — |
+|        | `/assign-task` | Assign to a member (select menu flow) | — |
 |        | `/edit-task` | Update title/description/due/column/assignee | — |
 |        | `/complete-task` | Mark complete/incomplete | — |
-|        | `/delete-task` | Remove a task | — |
+|        | `/delete-task` | Remove a task (select menu flow, soft delete) | — |
+|        | `/recover-task` | Recover a deleted task | — |
 |        | `/search-task` | Full-text search across tasks | — |
 | Admin  | `/add-column` | Append a column (board must exist) | Manage Channels |
 |        | `/remove-column` | Remove an empty column | Manage Channels |
@@ -109,6 +113,8 @@ Additional behavior:
 
 - Default rate limit is 1 call / 3s per user. Heavy commands (`/create-board`, `/add-task`, `/search-task`, `/edit-task`) use 10s cooldowns.
 - All command responses are posted to the channel so admins and teammates can review changes later.
+- Task management commands (`/move-task`, `/assign-task`, `/delete-task`) use intuitive select menu flows - no need to remember task IDs!
+- Deleted tasks are soft-deleted (marked with `deleted_at`) and can be recovered with `/recover-task`. Deleted tasks are automatically filtered from normal queries.
 - Reminder digests run roughly once per minute and deliver a daily summary (overdue + next 24h) to each board channel when the guild's scheduled time passes. Use `/toggle-notifications` + `/set-reminder` to control behavior per guild.
 - Feature requests persist to the `feature_requests` table. When GitHub credentials are configured, the bot publishes the backlog to `feature_requests.md` via the GitHub Contents API.
 - Community announcements add 👍 / 👎 / 🔁 reactions automatically; these votes feed nightly scoring (support adds weight, duplicate signals subtract) so the most demanded ideas float to the top.
