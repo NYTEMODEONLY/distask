@@ -201,8 +201,8 @@ class TasksCog(commands.Cog):
     )
     @app_commands.checks.cooldown(1, 3.0)
     async def move_task(self, interaction: discord.Interaction) -> None:
-        from .ui import MoveTaskModal, ColumnSelectorView
-        from .ui.helpers import get_column_choices
+        from .ui import MoveTaskFlowView
+        from .ui.helpers import get_board_choices
 
         if not interaction.guild_id:
             await interaction.response.send_message(
@@ -212,90 +212,59 @@ class TasksCog(commands.Cog):
             )
             return
 
-        async def on_task_validated(
-            inter: discord.Interaction, task_id: int, task: dict
-        ) -> None:
-            # Get column options for the task's board
-            column_options = await get_column_choices(self.db, task["board_id"])
-            if not column_options:
-                await inter.response.send_message(
-                    embed=self.embeds.message(
-                        "No Columns",
-                        "This board has no columns.",
-                        emoji="⚠️",
-                    ),
-                )
-                return
-
-            # Show column selector for the task's board
-            async def on_column_selected(
-                col_inter: discord.Interaction, column_id: int, column: dict
-            ) -> None:
-                await col_inter.response.defer(thinking=True)
-
-                # Get original column name for notification
-                old_column = await self.db.get_column_by_id(task["column_id"])
-                old_column_name = old_column["name"] if old_column else "Unknown"
-
-                # Move task
-                await self.db.move_task(task_id, column_id)
-
-                # Send event notification
-                if hasattr(self.bot, "event_notifier") and col_inter.guild_id:
-                    # Get updated task data
-                    updated_task = await self.db.fetch_task(task_id)
-                    board = await self.db.get_board(
-                        col_inter.guild_id, task["board_id"]
-                    )
-                    if updated_task and board:
-                        await self.bot.event_notifier.notify_task_moved(
-                            task=updated_task,
-                            from_column=old_column_name,
-                            to_column=column["name"],
-                            mover_id=col_inter.user.id,
-                            guild_id=col_inter.guild_id,
-                            channel_id=board["channel_id"],
-                        )
-
-                await col_inter.followup.send(
-                    embed=self.embeds.message(
-                        "Task Moved", f"#{task_id} → **{column['name']}**", emoji="🧭"
-                    ),
-                )
-
-            column_view = ColumnSelectorView(
-                board_id=task["board_id"],
-                db=self.db,
-                embeds=self.embeds,
-                on_select=on_column_selected,
-                placeholder="Select target column...",
-                initial_options=column_options,
+        # Get board options
+        board_options = await get_board_choices(self.db, interaction.guild_id)
+        if not board_options:
+            await interaction.response.send_message(
+                embed=self.embeds.message("No Boards", "There are no boards in this server.", emoji="⚠️"),
             )
-            await inter.response.send_message(
-                embed=self.embeds.message(
-                    "Move Task",
-                    f"Select a column to move task #{task_id} to:",
-                    emoji="🧭",
-                ),
-                view=column_view,
-            )
+            return
 
-        modal = MoveTaskModal(
-            on_task_validated=on_task_validated,
+        view = MoveTaskFlowView(
+            guild_id=interaction.guild_id,
             db=self.db,
             embeds=self.embeds,
+            initial_board_options=board_options,
         )
-        await interaction.response.send_modal(modal)
+
+        await interaction.response.send_message(
+            embed=self.embeds.message("Move Task", "Select a board to move a task:", emoji="🧭"),
+            view=view,
+        )
 
     @app_commands.command(
         name="assign-task", description="[Server] Assign a task to a member"
     )
     @app_commands.checks.cooldown(1, 3.0)
     async def assign_task(self, interaction: discord.Interaction) -> None:
-        from .ui import AssignTaskModal
+        from .ui import AssignTaskFlowView
+        from .ui.helpers import get_board_choices
 
-        modal = AssignTaskModal(db=self.db, embeds=self.embeds)
-        await interaction.response.send_modal(modal)
+        if not interaction.guild_id:
+            await interaction.response.send_message(
+                embed=self.embeds.message("Guild Only", "This command must be used in a guild.", emoji="⚠️"),
+            )
+            return
+
+        # Get board options
+        board_options = await get_board_choices(self.db, interaction.guild_id)
+        if not board_options:
+            await interaction.response.send_message(
+                embed=self.embeds.message("No Boards", "There are no boards in this server.", emoji="⚠️"),
+            )
+            return
+
+        view = AssignTaskFlowView(
+            guild_id=interaction.guild_id,
+            db=self.db,
+            embeds=self.embeds,
+            initial_board_options=board_options,
+        )
+
+        await interaction.response.send_message(
+            embed=self.embeds.message("Assign Task", "Select a board to assign a task:", emoji="👥"),
+            view=view,
+        )
 
     @app_commands.command(
         name="edit-task", description="[Server] Update details for a task"
@@ -393,7 +362,8 @@ class TasksCog(commands.Cog):
     @app_commands.command(name="delete-task", description="[Server] Remove a task")
     @app_commands.checks.cooldown(1, 3.0)
     async def delete_task(self, interaction: discord.Interaction) -> None:
-        from .ui import TaskIDInputModal, DeleteTaskConfirmationView
+        from .ui import DeleteTaskFlowView
+        from .ui.helpers import get_board_choices
 
         if not interaction.guild_id:
             await interaction.response.send_message(
@@ -403,47 +373,59 @@ class TasksCog(commands.Cog):
             )
             return
 
-        async def on_task_validated(inter: discord.Interaction, task_id: int) -> None:
-            # Verify task belongs to this guild
-            task = await self.db.fetch_task(task_id)
-            if not task:
-                await inter.response.send_message(
-                    embed=self.embeds.message(
-                        "Task Not Found", f"Task #{task_id} does not exist.", emoji="⚠️"
-                    ),
-                )
-                return
-
-            board = await self.db.get_board(inter.guild_id, task["board_id"])
-            if not board:
-                await inter.response.send_message(
-                    embed=self.embeds.message(
-                        "Task Not Found", "Task not part of this guild.", emoji="⚠️"
-                    ),
-                )
-                return
-
-            # Show confirmation view with task details
-            task_embed = self.embeds.task_detail(
-                task, task.get("column_name", "Unknown")
+        # Get board options
+        board_options = await get_board_choices(self.db, interaction.guild_id)
+        if not board_options:
+            await interaction.response.send_message(
+                embed=self.embeds.message("No Boards", "There are no boards in this server.", emoji="⚠️"),
             )
-            confirm_view = DeleteTaskConfirmationView(
-                task_id=task_id,
-                task=task,
-                db=self.db,
-                embeds=self.embeds,
-            )
-            await inter.response.send_message(
-                embed=task_embed,
-                view=confirm_view,
-            )
+            return
 
-        modal = TaskIDInputModal(
-            title="Delete Task",
-            on_submit_callback=on_task_validated,
+        view = DeleteTaskFlowView(
+            guild_id=interaction.guild_id,
+            db=self.db,
             embeds=self.embeds,
+            initial_board_options=board_options,
         )
-        await interaction.response.send_modal(modal)
+
+        await interaction.response.send_message(
+            embed=self.embeds.message("Delete Task", "Select a board to delete a task:", emoji="🗑️"),
+            view=view,
+        )
+
+    @app_commands.command(name="recover-task", description="[Server] Recover a deleted task")
+    @app_commands.checks.cooldown(1, 3.0)
+    async def recover_task(self, interaction: discord.Interaction) -> None:
+        from .ui import RecoverTaskFlowView
+        from .ui.helpers import get_board_choices
+
+        if not interaction.guild_id:
+            await interaction.response.send_message(
+                embed=self.embeds.message(
+                    "Guild Only", "This command must be used in a guild.", emoji="⚠️"
+                ),
+            )
+            return
+
+        # Get board options
+        board_options = await get_board_choices(self.db, interaction.guild_id)
+        if not board_options:
+            await interaction.response.send_message(
+                embed=self.embeds.message("No Boards", "There are no boards in this server.", emoji="⚠️"),
+            )
+            return
+
+        view = RecoverTaskFlowView(
+            guild_id=interaction.guild_id,
+            db=self.db,
+            embeds=self.embeds,
+            initial_board_options=board_options,
+        )
+
+        await interaction.response.send_message(
+            embed=self.embeds.message("Recover Task", "Select a board to recover a deleted task:", emoji="♻️"),
+            view=view,
+        )
 
     @app_commands.command(
         name="search-task", description="[Server] Full-text search across tasks"

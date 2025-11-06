@@ -1304,6 +1304,689 @@ class TaskActionsView(discord.ui.View):
             await self.on_delete_confirmed(interaction, self.task_id)
 
 
+class MoveTaskFlowView(discord.ui.View):
+    """View for the /move-task flow: board selector → task selector → column selector."""
+
+    def __init__(
+        self,
+        *,
+        guild_id: int,
+        db: "Database",
+        embeds: "EmbedFactory",
+        initial_board_options: list,
+        timeout: float = 300.0,
+    ) -> None:
+        super().__init__(timeout=timeout)
+        self.guild_id = guild_id
+        self.db = db
+        self.embeds = embeds
+        self.selected_board_id: Optional[int] = None
+        self.selected_task_id: Optional[int] = None
+        self.selected_task: Optional[dict] = None
+        self.current_step: int = 1  # 1=board, 2=task
+
+        # Set initial board options
+        self.board_select.options = initial_board_options
+
+        # Create task_select manually
+        task_select = discord.ui.Select(
+            placeholder="Select a board first...",
+            min_values=1,
+            max_values=1,
+            disabled=True,
+            row=1,
+            options=[discord.SelectOption(label="(Select board first)", value="__placeholder__", default=False)]
+        )
+        task_select.callback = self.task_select_callback
+        self.add_item(task_select)
+        self.task_select = task_select
+
+    @discord.ui.select(placeholder="1. Select a board...", min_values=1, max_values=1, row=0)
+    async def board_select(self, interaction: discord.Interaction, select: discord.ui.Select) -> None:
+        board_id = int(select.values[0])
+        board = await self.db.get_board(self.guild_id, board_id)
+        if not board:
+            await interaction.response.send_message(
+                embed=self.embeds.message("Board Not Found", "That board no longer exists.", emoji="⚠️"),
+            )
+            self.stop()
+            return
+
+        self.selected_board_id = board_id
+        self.current_step = 2
+
+        # Load task options (show all non-completed tasks)
+        task_options = await get_task_choices(self.db, board_id, 0, True)
+        # Filter out completed tasks manually
+        task_options = [opt for opt in task_options if not opt.label.startswith("✅")]
+        if not task_options:
+            await interaction.response.send_message(
+                embed=self.embeds.message(
+                    "No Tasks Found",
+                    "This board has no active tasks to move.",
+                    emoji="⚠️",
+                ),
+            )
+            self.stop()
+            return
+
+        # Show only task select, hide board select
+        self.board_select.disabled = True
+        self.task_select.options = task_options
+        self.task_select.disabled = False
+        self.task_select.placeholder = "2. Select a task to move..."
+        if hasattr(self, 'back_button'):
+            self.back_button.disabled = False
+
+        await interaction.response.edit_message(
+            embed=self.embeds.message(
+                "Move Task",
+                f"Board: **{board['name']}**\n\nSelect a task to move.",
+                emoji="🧭",
+            ),
+            view=self,
+        )
+
+    async def task_select_callback(self, interaction: discord.Interaction) -> None:
+        if not interaction.data or "values" not in interaction.data:
+            return
+
+        values = interaction.data.get("values", [])
+        if not values or values[0] == "__placeholder__":
+            return
+
+        task_id = int(values[0])
+        task = await self.db.fetch_task(task_id)
+        if not task:
+            await interaction.response.send_message(
+                embed=self.embeds.message("Task Not Found", "That task no longer exists.", emoji="⚠️"),
+            )
+            self.stop()
+            return
+
+        if task.get("board_id") != self.selected_board_id:
+            await interaction.response.send_message(
+                embed=self.embeds.message("Invalid Task", "Task doesn't belong to selected board.", emoji="⚠️"),
+            )
+            self.stop()
+            return
+
+        self.selected_task_id = task_id
+        self.selected_task = task
+
+        # Get column options for the task's board
+        from .helpers import get_column_choices
+        column_options = await get_column_choices(self.db, task["board_id"])
+        if not column_options:
+            await interaction.response.send_message(
+                embed=self.embeds.message("No Columns", "This board has no columns.", emoji="⚠️"),
+            )
+            self.stop()
+            return
+
+        # Show column selector
+        async def on_column_selected(col_inter: discord.Interaction, column_id: int, column: dict) -> None:
+            await col_inter.response.defer(thinking=True)
+            
+            # Get original column name for notification
+            old_column = await self.db.get_column_by_id(task["column_id"])
+            old_column_name = old_column["name"] if old_column else "Unknown"
+            
+            # Move task
+            await self.db.move_task(task_id, column_id)
+            
+            # Send event notification if available
+            if hasattr(col_inter.client, "event_notifier") and col_inter.guild_id:
+                try:
+                    # Get updated task data
+                    updated_task = await self.db.fetch_task(task_id)
+                    board = await self.db.get_board(col_inter.guild_id, task["board_id"])
+                    if updated_task and board:
+                        await col_inter.client.event_notifier.notify_task_moved(
+                            task=updated_task,
+                            from_column=old_column_name,
+                            to_column=column["name"],
+                            mover_id=col_inter.user.id,
+                            guild_id=col_inter.guild_id,
+                            channel_id=board["channel_id"],
+                        )
+                except Exception:
+                    # Don't fail the operation if notifications fail
+                    pass
+            
+            await col_inter.followup.send(
+                embed=self.embeds.message("Task Moved", f"Task #{task_id} → **{column['name']}**", emoji="🧭"),
+            )
+
+        column_view = ColumnSelectorView(
+            board_id=task["board_id"],
+            db=self.db,
+            embeds=self.embeds,
+            on_select=on_column_selected,
+            placeholder="Select target column...",
+            initial_options=column_options,
+        )
+        await interaction.response.send_message(
+            embed=self.embeds.message("Move Task", f"Select a column to move task #{task_id} to:", emoji="🧭"),
+            view=column_view,
+        )
+        self.stop()
+
+    @discord.ui.button(label="◀ Back", style=discord.ButtonStyle.secondary, disabled=True, row=2)
+    async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        if self.current_step == 2:
+            self.current_step = 1
+            self.selected_board_id = None
+            self.selected_task_id = None
+            self.selected_task = None
+            self.board_select.disabled = False
+            self.task_select.disabled = True
+            self.task_select.placeholder = "Select a board first..."
+            self.back_button.disabled = True
+
+            await interaction.response.edit_message(
+                embed=self.embeds.message("Move Task", "Select a board to move a task:", emoji="🧭"),
+                view=self,
+            )
+
+    @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.danger, row=2)
+    async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        await interaction.response.edit_message(
+            embed=self.embeds.message("Cancelled", "Task move cancelled.", emoji="❌"),
+            view=None,
+        )
+        self.stop()
+
+
+class AssignTaskFlowView(discord.ui.View):
+    """View for the /assign-task flow: board selector → task selector → user selector."""
+
+    def __init__(
+        self,
+        *,
+        guild_id: int,
+        db: "Database",
+        embeds: "EmbedFactory",
+        initial_board_options: list,
+        timeout: float = 300.0,
+    ) -> None:
+        super().__init__(timeout=timeout)
+        self.guild_id = guild_id
+        self.db = db
+        self.embeds = embeds
+        self.selected_board_id: Optional[int] = None
+        self.selected_task_id: Optional[int] = None
+        self.selected_task: Optional[dict] = None
+        self.current_step: int = 1  # 1=board, 2=task
+
+        # Set initial board options
+        self.board_select.options = initial_board_options
+
+        # Create task_select manually
+        task_select = discord.ui.Select(
+            placeholder="Select a board first...",
+            min_values=1,
+            max_values=1,
+            disabled=True,
+            row=1,
+            options=[discord.SelectOption(label="(Select board first)", value="__placeholder__", default=False)]
+        )
+        task_select.callback = self.task_select_callback
+        self.add_item(task_select)
+        self.task_select = task_select
+
+    @discord.ui.select(placeholder="1. Select a board...", min_values=1, max_values=1, row=0)
+    async def board_select(self, interaction: discord.Interaction, select: discord.ui.Select) -> None:
+        board_id = int(select.values[0])
+        board = await self.db.get_board(self.guild_id, board_id)
+        if not board:
+            await interaction.response.send_message(
+                embed=self.embeds.message("Board Not Found", "That board no longer exists.", emoji="⚠️"),
+            )
+            self.stop()
+            return
+
+        self.selected_board_id = board_id
+        self.current_step = 2
+
+        # Load task options (show all tasks)
+        task_options = await get_task_choices(self.db, board_id, 0, True)
+        if not task_options:
+            await interaction.response.send_message(
+                embed=self.embeds.message("No Tasks Found", "This board has no tasks.", emoji="⚠️"),
+            )
+            self.stop()
+            return
+
+        # Show only task select, hide board select
+        self.board_select.disabled = True
+        self.task_select.options = task_options
+        self.task_select.disabled = False
+        self.task_select.placeholder = "2. Select a task to assign..."
+        if hasattr(self, 'back_button'):
+            self.back_button.disabled = False
+
+        await interaction.response.edit_message(
+            embed=self.embeds.message(
+                "Assign Task",
+                f"Board: **{board['name']}**\n\nSelect a task to assign.",
+                emoji="👥",
+            ),
+            view=self,
+        )
+
+    async def task_select_callback(self, interaction: discord.Interaction) -> None:
+        if not interaction.data or "values" not in interaction.data:
+            return
+
+        values = interaction.data.get("values", [])
+        if not values or values[0] == "__placeholder__":
+            return
+
+        task_id = int(values[0])
+        task = await self.db.fetch_task(task_id)
+        if not task:
+            await interaction.response.send_message(
+                embed=self.embeds.message("Task Not Found", "That task no longer exists.", emoji="⚠️"),
+            )
+            self.stop()
+            return
+
+        if task.get("board_id") != self.selected_board_id:
+            await interaction.response.send_message(
+                embed=self.embeds.message("Invalid Task", "Task doesn't belong to selected board.", emoji="⚠️"),
+            )
+            self.stop()
+            return
+
+        self.selected_task_id = task_id
+        self.selected_task = task
+
+        # Show user select for assigning
+        from .helpers import parse_user_mention_or_id
+        
+        # Create user select
+        user_select = discord.ui.UserSelect(
+            placeholder="Select user(s) to assign...",
+            min_values=1,
+            max_values=10,
+            row=2,
+        )
+        
+        async def on_user_selected(user_inter: discord.Interaction) -> None:
+            # UserSelect callbacks only receive the interaction
+            # Access selected users via interaction.data['values'] or the select component
+            if not user_inter.data or "values" not in user_inter.data:
+                await user_inter.response.send_message(
+                    embed=self.embeds.message("No Users Selected", "Please select at least one user.", emoji="⚠️"),
+                )
+                return
+            
+            # Get selected user IDs from interaction data
+            selected_user_ids = [int(uid) for uid in user_inter.data.get("values", [])]
+            if not selected_user_ids:
+                await user_inter.response.send_message(
+                    embed=self.embeds.message("No Users Selected", "Please select at least one user.", emoji="⚠️"),
+                )
+                return
+            
+            await user_inter.response.defer(thinking=True)
+            
+            # Add assignees (they'll be added to existing ones)
+            await self.db.add_task_assignees(task_id, selected_user_ids)
+            
+            # Send event notification if available
+            if hasattr(user_inter.client, "event_notifier") and user_inter.guild_id:
+                try:
+                    await user_inter.client.event_notifier.notify_task_assigned(
+                        task_id=task_id,
+                        assignee_ids=selected_user_ids,
+                        assigned_by_id=user_inter.user.id,
+                    )
+                except Exception:
+                    # Don't fail the operation if notifications fail
+                    pass
+            
+            # Format success message
+            if len(selected_user_ids) == 1:
+                message = f"Task #{task_id} now includes <@{selected_user_ids[0]}> as an assignee."
+            else:
+                mentions = ", ".join([f"<@{uid}>" for uid in selected_user_ids])
+                message = f"Task #{task_id} now includes {mentions} as assignees."
+            
+            await user_inter.followup.send(
+                embed=self.embeds.message("Task Assigned", message, emoji="👥"),
+            )
+        
+        user_select.callback = on_user_selected
+        
+        view = discord.ui.View(timeout=300.0)
+        view.add_item(user_select)
+        
+        await interaction.response.send_message(
+            embed=self.embeds.message("Assign Task", f"Select user(s) to assign to task #{task_id}:", emoji="👥"),
+            view=view,
+        )
+        self.stop()
+
+    @discord.ui.button(label="◀ Back", style=discord.ButtonStyle.secondary, disabled=True, row=3)
+    async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        if self.current_step == 2:
+            self.current_step = 1
+            self.selected_board_id = None
+            self.selected_task_id = None
+            self.selected_task = None
+            self.board_select.disabled = False
+            self.task_select.disabled = True
+            self.task_select.placeholder = "Select a board first..."
+            self.back_button.disabled = True
+
+            await interaction.response.edit_message(
+                embed=self.embeds.message("Assign Task", "Select a board to assign a task:", emoji="👥"),
+                view=self,
+            )
+
+    @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.danger, row=3)
+    async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        await interaction.response.edit_message(
+            embed=self.embeds.message("Cancelled", "Task assignment cancelled.", emoji="❌"),
+            view=None,
+        )
+        self.stop()
+
+
+class DeleteTaskFlowView(discord.ui.View):
+    """View for the /delete-task flow: board selector → task selector → confirmation."""
+
+    def __init__(
+        self,
+        *,
+        guild_id: int,
+        db: "Database",
+        embeds: "EmbedFactory",
+        initial_board_options: list,
+        timeout: float = 300.0,
+    ) -> None:
+        super().__init__(timeout=timeout)
+        self.guild_id = guild_id
+        self.db = db
+        self.embeds = embeds
+        self.selected_board_id: Optional[int] = None
+        self.selected_task_id: Optional[int] = None
+        self.selected_task: Optional[dict] = None
+        self.current_step: int = 1  # 1=board, 2=task
+
+        # Set initial board options
+        self.board_select.options = initial_board_options
+
+        # Create task_select manually
+        task_select = discord.ui.Select(
+            placeholder="Select a board first...",
+            min_values=1,
+            max_values=1,
+            disabled=True,
+            row=1,
+            options=[discord.SelectOption(label="(Select board first)", value="__placeholder__", default=False)]
+        )
+        task_select.callback = self.task_select_callback
+        self.add_item(task_select)
+        self.task_select = task_select
+
+    @discord.ui.select(placeholder="1. Select a board...", min_values=1, max_values=1, row=0)
+    async def board_select(self, interaction: discord.Interaction, select: discord.ui.Select) -> None:
+        board_id = int(select.values[0])
+        board = await self.db.get_board(self.guild_id, board_id)
+        if not board:
+            await interaction.response.send_message(
+                embed=self.embeds.message("Board Not Found", "That board no longer exists.", emoji="⚠️"),
+            )
+            self.stop()
+            return
+
+        self.selected_board_id = board_id
+        self.current_step = 2
+
+        # Load task options (show all tasks)
+        task_options = await get_task_choices(self.db, board_id, 0, True)
+        if not task_options:
+            await interaction.response.send_message(
+                embed=self.embeds.message("No Tasks Found", "This board has no tasks.", emoji="⚠️"),
+            )
+            self.stop()
+            return
+
+        # Show only task select, hide board select
+        self.board_select.disabled = True
+        self.task_select.options = task_options
+        self.task_select.disabled = False
+        self.task_select.placeholder = "2. Select a task to delete..."
+        if hasattr(self, 'back_button'):
+            self.back_button.disabled = False
+
+        await interaction.response.edit_message(
+            embed=self.embeds.message(
+                "Delete Task",
+                f"Board: **{board['name']}**\n\nSelect a task to delete.",
+                emoji="🗑️",
+            ),
+            view=self,
+        )
+
+    async def task_select_callback(self, interaction: discord.Interaction) -> None:
+        if not interaction.data or "values" not in interaction.data:
+            return
+
+        values = interaction.data.get("values", [])
+        if not values or values[0] == "__placeholder__":
+            return
+
+        task_id = int(values[0])
+        task = await self.db.fetch_task(task_id)
+        if not task:
+            await interaction.response.send_message(
+                embed=self.embeds.message("Task Not Found", "That task no longer exists.", emoji="⚠️"),
+            )
+            self.stop()
+            return
+
+        if task.get("board_id") != self.selected_board_id:
+            await interaction.response.send_message(
+                embed=self.embeds.message("Invalid Task", "Task doesn't belong to selected board.", emoji="⚠️"),
+            )
+            self.stop()
+            return
+
+        self.selected_task_id = task_id
+        self.selected_task = task
+
+        # Show confirmation view
+        task_embed = self.embeds.task_detail(task, task.get("column_name", "Unknown"))
+        confirm_view = DeleteTaskConfirmationView(
+            task_id=task_id,
+            task=task,
+            db=self.db,
+            embeds=self.embeds,
+        )
+        await interaction.response.send_message(
+            embed=task_embed,
+            view=confirm_view,
+        )
+        self.stop()
+
+    @discord.ui.button(label="◀ Back", style=discord.ButtonStyle.secondary, disabled=True, row=2)
+    async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        if self.current_step == 2:
+            self.current_step = 1
+            self.selected_board_id = None
+            self.selected_task_id = None
+            self.selected_task = None
+            self.board_select.disabled = False
+            self.task_select.disabled = True
+            self.task_select.placeholder = "Select a board first..."
+            self.back_button.disabled = True
+
+            await interaction.response.edit_message(
+                embed=self.embeds.message("Delete Task", "Select a board to delete a task:", emoji="🗑️"),
+                view=self,
+            )
+
+    @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.danger, row=2)
+    async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        await interaction.response.edit_message(
+            embed=self.embeds.message("Cancelled", "Task deletion cancelled.", emoji="❌"),
+            view=None,
+        )
+        self.stop()
+
+
+class RecoverTaskFlowView(discord.ui.View):
+    """View for the /recover-task flow: board selector → deleted task selector → recovery."""
+
+    def __init__(
+        self,
+        *,
+        guild_id: int,
+        db: "Database",
+        embeds: "EmbedFactory",
+        initial_board_options: list,
+        timeout: float = 300.0,
+    ) -> None:
+        super().__init__(timeout=timeout)
+        self.guild_id = guild_id
+        self.db = db
+        self.embeds = embeds
+        self.selected_board_id: Optional[int] = None
+        self.current_step: int = 1  # 1=board, 2=task
+
+        # Set initial board options
+        self.board_select.options = initial_board_options
+
+        # Create task_select manually
+        task_select = discord.ui.Select(
+            placeholder="Select a board first...",
+            min_values=1,
+            max_values=1,
+            disabled=True,
+            row=1,
+            options=[discord.SelectOption(label="(Select board first)", value="__placeholder__", default=False)]
+        )
+        task_select.callback = self.task_select_callback
+        self.add_item(task_select)
+        self.task_select = task_select
+
+    @discord.ui.select(placeholder="1. Select a board...", min_values=1, max_values=1, row=0)
+    async def board_select(self, interaction: discord.Interaction, select: discord.ui.Select) -> None:
+        board_id = int(select.values[0])
+        board = await self.db.get_board(self.guild_id, board_id)
+        if not board:
+            await interaction.response.send_message(
+                embed=self.embeds.message("Board Not Found", "That board no longer exists.", emoji="⚠️"),
+            )
+            self.stop()
+            return
+
+        self.selected_board_id = board_id
+        self.current_step = 2
+
+        # Load deleted task options
+        deleted_tasks = await self.db.fetch_deleted_tasks(self.guild_id, board_id)
+        if not deleted_tasks:
+            await interaction.response.send_message(
+                embed=self.embeds.message("No Deleted Tasks", "This board has no deleted tasks to recover.", emoji="ℹ️"),
+            )
+            self.stop()
+            return
+
+        # Create task options from deleted tasks
+        task_options = []
+        for task in deleted_tasks[:25]:  # Limit to 25
+            title = task.get("title", "Untitled")[:50]
+            deleted_at = task.get("deleted_at", "")
+            task_options.append(
+                discord.SelectOption(
+                    label=f"#{task['id']}: {title}",
+                    value=str(task["id"]),
+                    description=f"Deleted {deleted_at[:10] if deleted_at else 'recently'}"[:100],
+                )
+            )
+
+        # Show only task select, hide board select
+        self.board_select.disabled = True
+        self.task_select.options = task_options
+        self.task_select.disabled = False
+        self.task_select.placeholder = "2. Select a task to recover..."
+        if hasattr(self, 'back_button'):
+            self.back_button.disabled = False
+
+        await interaction.response.edit_message(
+            embed=self.embeds.message(
+                "Recover Task",
+                f"Board: **{board['name']}**\n\nSelect a deleted task to recover.",
+                emoji="♻️",
+            ),
+            view=self,
+        )
+
+    async def task_select_callback(self, interaction: discord.Interaction) -> None:
+        if not interaction.data or "values" not in interaction.data:
+            return
+
+        values = interaction.data.get("values", [])
+        if not values or values[0] == "__placeholder__":
+            return
+
+        task_id = int(values[0])
+        await interaction.response.defer(thinking=True)
+
+        # Recover the task
+        recovered = await self.db.recover_task(task_id)
+        if not recovered:
+            await interaction.followup.send(
+                embed=self.embeds.message("Recovery Failed", f"Task #{task_id} could not be recovered. It may not be deleted.", emoji="⚠️"),
+            )
+            self.stop()
+            return
+
+        # Fetch the recovered task to show details
+        task = await self.db.fetch_task(task_id)
+        if task:
+            task_embed = self.embeds.task_detail(task, task.get("column_name", "Unknown"))
+            await interaction.followup.send(
+                embed=task_embed,
+            )
+            await interaction.followup.send(
+                embed=self.embeds.message("Task Recovered", f"Task #{task_id} has been recovered successfully.", emoji="♻️"),
+            )
+        else:
+            await interaction.followup.send(
+                embed=self.embeds.message("Task Recovered", f"Task #{task_id} has been recovered successfully.", emoji="♻️"),
+            )
+        self.stop()
+
+    @discord.ui.button(label="◀ Back", style=discord.ButtonStyle.secondary, disabled=True, row=2)
+    async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        if self.current_step == 2:
+            self.current_step = 1
+            self.selected_board_id = None
+            self.board_select.disabled = False
+            self.task_select.disabled = True
+            self.task_select.placeholder = "Select a board first..."
+            self.back_button.disabled = True
+
+            await interaction.response.edit_message(
+                embed=self.embeds.message("Recover Task", "Select a board to recover a deleted task:", emoji="♻️"),
+                view=self,
+            )
+
+    @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.danger, row=2)
+    async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        await interaction.response.edit_message(
+            embed=self.embeds.message("Cancelled", "Task recovery cancelled.", emoji="❌"),
+            view=None,
+        )
+        self.stop()
+
+
 class DeleteBoardConfirmationView(discord.ui.View):
     """View with Cancel/Delete buttons for board deletion."""
 
