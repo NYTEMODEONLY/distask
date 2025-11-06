@@ -73,7 +73,8 @@ class Database:
                     created_by BIGINT,
                     created_at TEXT NOT NULL,
                     completed BOOLEAN NOT NULL DEFAULT FALSE,
-                    completion_notes TEXT
+                    completion_notes TEXT,
+                    deleted_at TEXT
                 )
                 """,
                 """
@@ -125,6 +126,7 @@ class Database:
                 "ALTER TABLE feature_requests ADD COLUMN IF NOT EXISTS community_downvotes INTEGER NOT NULL DEFAULT 0",
                 "ALTER TABLE feature_requests ADD COLUMN IF NOT EXISTS community_duplicate_votes INTEGER NOT NULL DEFAULT 0",
                 "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completion_notes TEXT",
+                "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS deleted_at TEXT",
                 # Migrate existing assignee_id values to task_assignees table (one-time migration)
                 """
                 INSERT INTO task_assignees (task_id, user_id, assigned_at)
@@ -439,7 +441,7 @@ class Database:
                    ) as assignee_ids
             FROM tasks t
             LEFT JOIN task_assignees ta ON t.id = ta.task_id
-            WHERE t.board_id = $1
+            WHERE t.board_id = $1 AND (t.deleted_at IS NULL)
             """
         ]
         params: List[Any] = [board_id]
@@ -479,7 +481,7 @@ class Database:
                    ) as assignee_ids
             FROM tasks t
             LEFT JOIN task_assignees ta ON t.id = ta.task_id
-            WHERE t.id = $1
+            WHERE t.id = $1 AND (t.deleted_at IS NULL)
             GROUP BY t.id
             """,
             (task_id,),
@@ -515,12 +517,58 @@ class Database:
         return bool(result)
 
     async def delete_task(self, task_id: int) -> bool:
+        """Soft delete a task by setting deleted_at timestamp."""
         result = await self._execute(
-            "DELETE FROM tasks WHERE id = $1",
+            "UPDATE tasks SET deleted_at = $1 WHERE id = $2 AND deleted_at IS NULL",
+            (_utcnow(), task_id),
+            rowcount=True,
+        )
+        return bool(result)
+    
+    async def recover_task(self, task_id: int) -> bool:
+        """Recover a soft-deleted task by clearing deleted_at."""
+        result = await self._execute(
+            "UPDATE tasks SET deleted_at = NULL WHERE id = $1 AND deleted_at IS NOT NULL",
             (task_id,),
             rowcount=True,
         )
         return bool(result)
+    
+    async def fetch_deleted_tasks(self, guild_id: int, board_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Fetch soft-deleted tasks for a guild or board."""
+        query = """
+            SELECT t.*,
+                   COALESCE(
+                       json_agg(DISTINCT ta.user_id) FILTER (WHERE ta.user_id IS NOT NULL),
+                       '[]'::json
+                   ) as assignee_ids,
+                   boards.name AS board_name,
+                   boards.guild_id
+            FROM tasks t
+            JOIN boards ON t.board_id = boards.id
+            LEFT JOIN task_assignees ta ON t.id = ta.task_id
+            WHERE boards.guild_id = $1 AND t.deleted_at IS NOT NULL
+        """
+        params: List[Any] = [guild_id]
+        if board_id is not None:
+            query += " AND t.board_id = $2"
+            params.append(board_id)
+        query += " GROUP BY t.id, boards.name, boards.guild_id ORDER BY t.deleted_at DESC"
+        
+        rows = await self._execute(query, tuple(params), fetchall=True)
+        tasks = []
+        for row in rows or []:
+            task_dict = dict(row)
+            # Convert JSON array to Python list
+            if isinstance(task_dict.get("assignee_ids"), list):
+                task_dict["assignee_ids"] = task_dict["assignee_ids"]
+            elif task_dict.get("assignee_ids"):
+                import json
+                task_dict["assignee_ids"] = json.loads(task_dict["assignee_ids"]) if isinstance(task_dict["assignee_ids"], str) else []
+            else:
+                task_dict["assignee_ids"] = []
+            tasks.append(task_dict)
+        return tasks
     
     # Multiple assignees management methods
     async def add_task_assignees(self, task_id: int, user_ids: List[int]) -> None:
@@ -624,6 +672,7 @@ class Database:
             JOIN boards ON t.board_id = boards.id
             LEFT JOIN task_assignees ta ON t.id = ta.task_id
             WHERE boards.guild_id = $1
+              AND (t.deleted_at IS NULL)
               AND (
                   t.title ILIKE $2 OR
                   COALESCE(t.description, '') ILIKE $3
@@ -756,6 +805,7 @@ class Database:
             JOIN boards ON t.board_id = boards.id
             LEFT JOIN task_assignees ta ON t.id = ta.task_id
             WHERE t.completed = FALSE AND t.due_date IS NOT NULL AND t.due_date <= $1
+              AND (t.deleted_at IS NULL)
             GROUP BY t.id, boards.name, boards.channel_id, boards.guild_id
             ORDER BY t.due_date ASC
             """,
