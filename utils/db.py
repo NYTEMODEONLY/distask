@@ -135,6 +135,15 @@ class Database:
                 # FR-19: Soft delete for boards and columns
                 "ALTER TABLE boards ADD COLUMN IF NOT EXISTS deleted_at TEXT",
                 "ALTER TABLE columns ADD COLUMN IF NOT EXISTS deleted_at TEXT",
+                # Partial unique indexes that ignore deleted rows (allow recreating with same name)
+                # PostgreSQL creates unique constraints as indexes, so we drop the constraint's index
+                # and replace with partial unique indexes that only apply to non-deleted rows
+                "DROP INDEX IF EXISTS boards_guild_id_name_key",
+                "DROP INDEX IF EXISTS boards_guild_id_name_idx",
+                "CREATE UNIQUE INDEX IF NOT EXISTS boards_guild_id_name_unique ON boards(guild_id, name) WHERE deleted_at IS NULL",
+                "DROP INDEX IF EXISTS columns_board_id_name_key",
+                "DROP INDEX IF EXISTS columns_board_id_name_idx",
+                "CREATE UNIQUE INDEX IF NOT EXISTS columns_board_id_name_unique ON columns(board_id, name) WHERE deleted_at IS NULL",
                 # FR-6: Always-visible boards
                 """
                 CREATE TABLE IF NOT EXISTS board_views (
