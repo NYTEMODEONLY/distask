@@ -127,6 +127,42 @@ class BoardsCog(commands.Cog):
             view=view,
         )
 
+    @app_commands.command(name="recover-board", description="[Server] Recover a deleted board")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.checks.cooldown(1, 3.0)
+    async def recover_board(self, interaction: discord.Interaction) -> None:
+        from .ui import RecoverBoardFlowView
+
+        if not interaction.guild_id:
+            await interaction.response.send_message(
+                embed=self.embeds.message("Guild Only", "Join a server to recover boards.", emoji="⚠️"),
+            )
+            return
+
+        # Check if there are any deleted boards
+        deleted_boards = await self.db.fetch_deleted_boards(interaction.guild_id)
+        if not deleted_boards:
+            await interaction.response.send_message(
+                embed=self.embeds.message(
+                    "No Deleted Boards",
+                    "This server has no deleted boards to recover.",
+                    emoji="ℹ️",
+                ),
+            )
+            return
+
+        view = RecoverBoardFlowView(
+            guild_id=interaction.guild_id,
+            db=self.db,
+            embeds=self.embeds,
+            deleted_boards=deleted_boards,
+        )
+
+        await interaction.response.send_message(
+            embed=self.embeds.message("Recover Board", "Select a deleted board to recover:", emoji="♻️"),
+            view=view,
+        )
+
     @app_commands.command(name="view-board", description="[Server] View a board's configuration")
     @app_commands.checks.cooldown(1, 3.0)
     async def view_board(self, interaction: discord.Interaction) -> None:

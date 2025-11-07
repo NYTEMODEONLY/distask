@@ -138,7 +138,8 @@ class NotificationRouter:
             if not channel:
                 channel = await self.bot.fetch_channel(channel_id)
 
-            if channel and isinstance(channel, discord.TextChannel):
+            # Support text channels and threads
+            if channel and isinstance(channel, (discord.TextChannel, discord.Thread)):
                 await channel.send(embed=embed, view=view)
                 logger.info(f"Sent channel notification to channel {channel_id}")
                 return True
@@ -166,7 +167,8 @@ class NotificationRouter:
             if not channel:
                 channel = await self.bot.fetch_channel(channel_id)
 
-            if channel and isinstance(channel, discord.TextChannel):
+            # Support text channels and threads
+            if channel and isinstance(channel, (discord.TextChannel, discord.Thread)):
                 await channel.send(f"<@{user_id}>", embed=embed, view=view)
                 logger.info(f"Sent channel mention notification to channel {channel_id}")
                 return True

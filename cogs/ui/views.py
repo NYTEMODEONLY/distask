@@ -171,7 +171,12 @@ class CreateBoardFlowView(discord.ui.View):
         # Create and add ChannelSelect component
         channel_select = discord.ui.ChannelSelect(
             placeholder="Select a channel for board updates...",
-            channel_types=[discord.ChannelType.text],
+            channel_types=[
+                discord.ChannelType.text,
+                discord.ChannelType.public_thread,
+                discord.ChannelType.private_thread,
+                discord.ChannelType.news_thread,
+            ],
             min_values=1,
             max_values=1,
             row=0,
@@ -199,7 +204,7 @@ class CreateBoardFlowView(discord.ui.View):
         try:
             channel = select.values[0]
 
-            # ChannelSelect with channel_types=[discord.ChannelType.text] already filters to text channels only
+            # ChannelSelect with channel_types already filters to text channels and threads
             # Partial channel objects from ChannelSelect may not pass isinstance checks,
             # so we trust the filter and just extract the ID
             # Full validation will happen in the modal when we fetch the complete channel
@@ -2049,6 +2054,256 @@ class RecoverTaskFlowView(discord.ui.View):
         self.stop()
 
 
+class RecoverBoardFlowView(discord.ui.View):
+    """View for the /recover-board flow: select deleted board → recovery."""
+
+    def __init__(
+        self,
+        *,
+        guild_id: int,
+        db: "Database",
+        embeds: "EmbedFactory",
+        deleted_boards: List[Dict[str, Any]],
+        timeout: float = 300.0,
+    ) -> None:
+        super().__init__(timeout=timeout)
+        self.guild_id = guild_id
+        self.db = db
+        self.embeds = embeds
+
+        # Create board options from deleted boards
+        board_options = []
+        for board in deleted_boards[:25]:  # Limit to 25
+            name = board.get("name", "Untitled")[:80]
+            deleted_at = board.get("deleted_at", "")
+            board_options.append(
+                discord.SelectOption(
+                    label=f"#{board['id']}: {name}",
+                    value=str(board["id"]),
+                    description=f"Deleted {deleted_at[:10] if deleted_at else 'recently'}"[:100],
+                )
+            )
+
+        board_select = discord.ui.Select(
+            placeholder="Select a deleted board to recover...",
+            min_values=1,
+            max_values=1,
+            options=board_options,
+        )
+        board_select.callback = self.on_board_selected
+        self.add_item(board_select)
+
+    async def on_board_selected(self, interaction: discord.Interaction) -> None:
+        if not interaction.data or "values" not in interaction.data:
+            return
+
+        values = interaction.data.get("values", [])
+        if not values:
+            return
+
+        board_id = int(values[0])
+        await interaction.response.defer(thinking=True)
+
+        # Recover the board
+        recovered = await self.db.recover_board(self.guild_id, board_id)
+        if not recovered:
+            await interaction.followup.send(
+                embed=self.embeds.message(
+                    "Recovery Failed",
+                    f"Board #{board_id} could not be recovered. It may not be deleted, or there may be an active board with the same name.",
+                    emoji="⚠️",
+                ),
+            )
+            self.stop()
+            return
+
+        # Fetch the recovered board to show details
+        board = await self.db.get_board(self.guild_id, board_id)
+        if board:
+            await interaction.followup.send(
+                embed=self.embeds.message(
+                    "Board Recovered",
+                    f"**{board['name']}** (ID: {board_id}) has been recovered successfully.",
+                    emoji="♻️",
+                ),
+            )
+        else:
+            await interaction.followup.send(
+                embed=self.embeds.message(
+                    "Board Recovered",
+                    f"Board #{board_id} has been recovered successfully.",
+                    emoji="♻️",
+                ),
+            )
+        self.stop()
+
+    @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.danger, row=1)
+    async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        await interaction.response.edit_message(
+            embed=self.embeds.message("Cancelled", "Board recovery cancelled.", emoji="❌"),
+            view=None,
+        )
+        self.stop()
+
+
+class RecoverColumnFlowView(discord.ui.View):
+    """View for the /recover-column flow: board selector → deleted column selector → recovery."""
+
+    def __init__(
+        self,
+        *,
+        guild_id: int,
+        db: "Database",
+        embeds: "EmbedFactory",
+        initial_board_options: list,
+        timeout: float = 300.0,
+    ) -> None:
+        super().__init__(timeout=timeout)
+        self.guild_id = guild_id
+        self.db = db
+        self.embeds = embeds
+        self.selected_board_id: Optional[int] = None
+        self.current_step: int = 1  # 1=board, 2=column
+
+        # Set initial board options
+        self.board_select.options = initial_board_options
+
+        # Create column_select manually
+        column_select = discord.ui.Select(
+            placeholder="Select a board first...",
+            min_values=1,
+            max_values=1,
+            disabled=True,
+            row=1,
+            options=[discord.SelectOption(label="(Select board first)", value="__placeholder__", default=False)]
+        )
+        column_select.callback = self.column_select_callback
+        self.add_item(column_select)
+        self.column_select = column_select
+
+    @discord.ui.select(placeholder="1. Select a board...", min_values=1, max_values=1, row=0)
+    async def board_select(self, interaction: discord.Interaction, select: discord.ui.Select) -> None:
+        board_id = int(select.values[0])
+        board = await self.db.get_board(self.guild_id, board_id)
+        if not board:
+            await interaction.response.send_message(
+                embed=self.embeds.message("Board Not Found", "That board no longer exists.", emoji="⚠️"),
+            )
+            self.stop()
+            return
+
+        self.selected_board_id = board_id
+        self.current_step = 2
+
+        # Load deleted column options
+        deleted_columns = await self.db.fetch_deleted_columns(board_id)
+        if not deleted_columns:
+            await interaction.response.send_message(
+                embed=self.embeds.message(
+                    "No Deleted Columns",
+                    "This board has no deleted columns to recover.",
+                    emoji="ℹ️",
+                ),
+            )
+            self.stop()
+            return
+
+        # Create column options from deleted columns
+        column_options = []
+        for column in deleted_columns[:25]:  # Limit to 25
+            name = column.get("name", "Untitled")[:80]
+            deleted_at = column.get("deleted_at", "")
+            column_options.append(
+                discord.SelectOption(
+                    label=f"#{column['id']}: {name}",
+                    value=str(column["id"]),
+                    description=f"Deleted {deleted_at[:10] if deleted_at else 'recently'}"[:100],
+                )
+            )
+
+        # Show only column select, hide board select
+        self.board_select.disabled = True
+        self.column_select.options = column_options
+        self.column_select.disabled = False
+        self.column_select.placeholder = "2. Select a column to recover..."
+
+        await interaction.response.edit_message(
+            embed=self.embeds.message(
+                "Recover Column",
+                f"Board: **{board['name']}**\n\nSelect a deleted column to recover.",
+                emoji="♻️",
+            ),
+            view=self,
+        )
+
+    async def column_select_callback(self, interaction: discord.Interaction) -> None:
+        if not interaction.data or "values" not in interaction.data:
+            return
+
+        values = interaction.data.get("values", [])
+        if not values or values[0] == "__placeholder__":
+            return
+
+        column_id = int(values[0])
+        await interaction.response.defer(thinking=True)
+
+        # Recover the column
+        recovered = await self.db.recover_column(self.selected_board_id, column_id)
+        if not recovered:
+            await interaction.followup.send(
+                embed=self.embeds.message(
+                    "Recovery Failed",
+                    f"Column #{column_id} could not be recovered. It may not be deleted, or there may be an active column with the same name.",
+                    emoji="⚠️",
+                ),
+            )
+            self.stop()
+            return
+
+        # Fetch the recovered column to show details
+        column = await self.db.get_column_by_id(column_id)
+        if column:
+            await interaction.followup.send(
+                embed=self.embeds.message(
+                    "Column Recovered",
+                    f"**{column['name']}** (ID: {column_id}) has been recovered successfully.",
+                    emoji="♻️",
+                ),
+            )
+        else:
+            await interaction.followup.send(
+                embed=self.embeds.message(
+                    "Column Recovered",
+                    f"Column #{column_id} has been recovered successfully.",
+                    emoji="♻️",
+                ),
+            )
+        self.stop()
+
+    @discord.ui.button(label="◀ Back", style=discord.ButtonStyle.secondary, disabled=True, row=2)
+    async def back_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        if self.current_step == 2:
+            self.current_step = 1
+            self.selected_board_id = None
+            self.board_select.disabled = False
+            self.column_select.disabled = True
+            self.column_select.placeholder = "Select a board first..."
+            self.back_button.disabled = True
+
+            await interaction.response.edit_message(
+                embed=self.embeds.message("Recover Column", "Select a board to recover a deleted column:", emoji="♻️"),
+                view=self,
+            )
+
+    @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.danger, row=2)
+    async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        await interaction.response.edit_message(
+            embed=self.embeds.message("Cancelled", "Column recovery cancelled.", emoji="❌"),
+            view=None,
+        )
+        self.stop()
+
+
 class DeleteBoardConfirmationView(discord.ui.View):
     """View with Cancel/Delete buttons for board deletion."""
 
@@ -2688,7 +2943,12 @@ class BoardViewSetupView(discord.ui.View):
         
         # Add channel selector and pin toggle
         self.channel_select = discord.ui.ChannelSelect(
-            channel_types=[discord.ChannelType.text],
+            channel_types=[
+                discord.ChannelType.text,
+                discord.ChannelType.public_thread,
+                discord.ChannelType.private_thread,
+                discord.ChannelType.news_thread,
+            ],
             placeholder="Select target channel (default: board channel)...",
         )
         self.channel_select.callback = self.on_channel_selected
@@ -2722,7 +2982,7 @@ class BoardViewSetupView(discord.ui.View):
         
         # Get channel
         channel = interaction.guild.get_channel(channel_id)
-        if not channel or not isinstance(channel, discord.TextChannel):
+        if not channel or not isinstance(channel, (discord.TextChannel, discord.Thread)):
             await interaction.response.send_message(
                 embed=self.embeds.message("Error", "Invalid channel.", emoji="❌"),
             )
@@ -2762,7 +3022,7 @@ class BoardViewSetupView(discord.ui.View):
             # Update existing message
             try:
                 old_channel = interaction.client.get_channel(view_config["channel_id"])
-                if old_channel and isinstance(old_channel, discord.TextChannel):
+                if old_channel and isinstance(old_channel, (discord.TextChannel, discord.Thread)):
                     old_message = await old_channel.fetch_message(view_config["message_id"])
                     await old_message.edit(embed=embed)
                     
