@@ -436,6 +436,13 @@ class AddTaskModal(discord.ui.Modal):
         embed = self.embeds.task_detail(task, self.column_name)
         embed.add_field(name="Board", value=self.board_name, inline=False)
 
+        # Schedule board view refresh
+        if hasattr(interaction.client, "board_view_updater"):
+            try:
+                interaction.client.board_view_updater.schedule_refresh(self.board_id)
+            except Exception:
+                pass  # Don't fail if refresh fails
+
         # Add self-assign button
         from .views import SelfAssignTaskView
 
@@ -706,6 +713,15 @@ class EditTaskModal(discord.ui.Modal):
                         guild_id=interaction.guild_id,
                         channel_id=board["channel_id"],
                     )
+
+        # Schedule board view refresh
+        if hasattr(interaction.client, "board_view_updater"):
+            try:
+                updated_task = await self.db.fetch_task(self.task_id)
+                if updated_task:
+                    interaction.client.board_view_updater.schedule_refresh(updated_task["board_id"])
+            except Exception:
+                pass  # Don't fail if refresh fails
 
         await interaction.followup.send(
             embed=self.embeds.message(

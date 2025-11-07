@@ -127,6 +127,23 @@ class Database:
                 "ALTER TABLE feature_requests ADD COLUMN IF NOT EXISTS community_duplicate_votes INTEGER NOT NULL DEFAULT 0",
                 "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completion_notes TEXT",
                 "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS deleted_at TEXT",
+                # FR-10: Completion permission gating
+                "ALTER TABLE guilds ADD COLUMN IF NOT EXISTS completion_assignee_only BOOLEAN NOT NULL DEFAULT FALSE",
+                "ALTER TABLE guilds ADD COLUMN IF NOT EXISTS completion_allowed_roles BIGINT[] NOT NULL DEFAULT '{}'",
+                "ALTER TABLE boards ADD COLUMN IF NOT EXISTS completion_assignee_only BOOLEAN",
+                "ALTER TABLE boards ADD COLUMN IF NOT EXISTS completion_allowed_roles BIGINT[]",
+                # FR-6: Always-visible boards
+                """
+                CREATE TABLE IF NOT EXISTS board_views (
+                    board_id BIGINT PRIMARY KEY REFERENCES boards(id) ON DELETE CASCADE,
+                    channel_id BIGINT NOT NULL,
+                    message_id BIGINT,
+                    pinned BOOLEAN NOT NULL DEFAULT FALSE,
+                    updated_at TEXT NOT NULL
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_board_views_board ON board_views(board_id)",
+                "CREATE INDEX IF NOT EXISTS idx_board_views_channel ON board_views(channel_id)",
                 # Migrate existing assignee_id values to task_assignees table (one-time migration)
                 """
                 INSERT INTO task_assignees (task_id, user_id, assigned_at)
@@ -287,6 +304,118 @@ class Database:
             "UPDATE guilds SET reminder_time = $1 WHERE guild_id = $2",
             (reminder_time, guild_id),
         )
+
+    # FR-10: Completion policy methods
+    async def set_guild_completion_policy(
+        self, guild_id: int, assignee_only: bool, allowed_role_ids: List[int]
+    ) -> None:
+        """Set guild-level completion policy."""
+        await self.ensure_guild(guild_id)
+        await self._execute(
+            "UPDATE guilds SET completion_assignee_only = $1, completion_allowed_roles = $2 WHERE guild_id = $3",
+            (assignee_only, allowed_role_ids, guild_id),
+        )
+
+    async def set_board_completion_policy(
+        self, board_id: int, assignee_only: Optional[bool], allowed_role_ids: Optional[List[int]]
+    ) -> None:
+        """Set board-level completion policy (NULL values mean inherit from guild)."""
+        updates = []
+        params = []
+        if assignee_only is not None:
+            updates.append(f"completion_assignee_only = ${len(params) + 1}")
+            params.append(assignee_only)
+        if allowed_role_ids is not None:
+            updates.append(f"completion_allowed_roles = ${len(params) + 1}")
+            params.append(allowed_role_ids)
+        if updates:
+            params.append(board_id)
+            await self._execute(
+                f"UPDATE boards SET {', '.join(updates)} WHERE id = ${len(params)}",
+                tuple(params),
+            )
+
+    async def get_completion_policy(self, guild_id: int, board_id: Optional[int] = None) -> Dict[str, Any]:
+        """Get effective completion policy (board overrides guild, NULL means inherit)."""
+        guild = await self.get_guild_settings(guild_id)
+        guild_assignee_only = guild.get("completion_assignee_only", False)
+        guild_roles = guild.get("completion_allowed_roles", []) or []
+        
+        if board_id:
+            board = await self.get_board(guild_id, board_id)
+            if board:
+                assignee_only = board.get("completion_assignee_only")
+                if assignee_only is None:
+                    assignee_only = guild_assignee_only
+                else:
+                    assignee_only = bool(assignee_only)
+                
+                allowed_roles = board.get("completion_allowed_roles")
+                if allowed_roles is None:
+                    allowed_roles = guild_roles
+                else:
+                    allowed_roles = allowed_roles if allowed_roles else []
+                
+                return {
+                    "assignee_only": assignee_only,
+                    "allowed_role_ids": allowed_roles if isinstance(allowed_roles, list) else (allowed_roles or []),
+                }
+        
+        return {
+            "assignee_only": guild_assignee_only,
+            "allowed_role_ids": guild_roles if isinstance(guild_roles, list) else (guild_roles or []),
+        }
+
+    # FR-6: Board view methods
+    async def create_board_view(
+        self, board_id: int, channel_id: int, message_id: Optional[int], pinned: bool
+    ) -> None:
+        """Create or update a board view."""
+        await self._execute(
+            """
+            INSERT INTO board_views (board_id, channel_id, message_id, pinned, updated_at)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (board_id) DO UPDATE
+            SET channel_id = $2, message_id = $3, pinned = $4, updated_at = $5
+            """,
+            (board_id, channel_id, message_id, pinned, _utcnow()),
+        )
+
+    async def get_board_view(self, board_id: int) -> Optional[Dict[str, Any]]:
+        """Get board view configuration."""
+        row = await self._execute(
+            "SELECT * FROM board_views WHERE board_id = $1",
+            (board_id,),
+            fetchone=True,
+        )
+        return dict(row) if row else None
+
+    async def update_board_view_message(self, board_id: int, message_id: int) -> None:
+        """Update the message_id for a board view."""
+        await self._execute(
+            "UPDATE board_views SET message_id = $1, updated_at = $2 WHERE board_id = $3",
+            (message_id, _utcnow(), board_id),
+        )
+
+    async def delete_board_view(self, board_id: int) -> None:
+        """Delete a board view."""
+        await self._execute(
+            "DELETE FROM board_views WHERE board_id = $1",
+            (board_id,),
+        )
+
+    async def list_board_views(self, guild_id: int) -> List[Dict[str, Any]]:
+        """List all board views for a guild."""
+        rows = await self._execute(
+            """
+            SELECT bv.* FROM board_views bv
+            JOIN boards b ON bv.board_id = b.id
+            WHERE b.guild_id = $1
+            """,
+            (guild_id,),
+            fetchall=True,
+        )
+        return [dict(row) for row in rows or []]
 
     async def create_board(
         self,

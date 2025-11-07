@@ -278,6 +278,233 @@ class AdminCog(commands.Cog):
         await interaction.response.send_modal(modal)
 
     @app_commands.command(
+        name="set-completion-policy", description="[Server] Configure who can mark tasks complete"
+    )
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.checks.cooldown(1, 10.0)
+    async def set_completion_policy(self, interaction: discord.Interaction) -> None:
+        from .ui import CompletionPolicyView
+        from .ui.helpers import get_board_choices
+
+        if not interaction.guild_id:
+            await interaction.response.send_message(
+                embed=self.embeds.message(
+                    "Guild Only", "Run this inside a server.", emoji="⚠️"
+                ),
+            )
+            return
+
+        board_options = await get_board_choices(self.db, interaction.guild_id)
+        view = CompletionPolicyView(
+            guild_id=interaction.guild_id,
+            db=self.db,
+            embeds=self.embeds,
+            initial_board_options=board_options,
+        )
+        await interaction.response.send_message(
+            embed=self.embeds.message(
+                "Completion Policy",
+                "Select scope (guild or board) and configure completion permissions.",
+                emoji="🔒",
+            ),
+            view=view,
+        )
+
+    @app_commands.command(
+        name="view-completion-policy", description="[Server] View current completion policy"
+    )
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.checks.cooldown(1, 3.0)
+    async def view_completion_policy(self, interaction: discord.Interaction) -> None:
+        from .ui import BoardSelectorView
+        from .ui.helpers import get_board_choices
+
+        if not interaction.guild_id:
+            await interaction.response.send_message(
+                embed=self.embeds.message(
+                    "Guild Only", "Run this inside a server.", emoji="⚠️"
+                ),
+            )
+            return
+
+        board_options = await get_board_choices(self.db, interaction.guild_id)
+        if not board_options:
+            # Show guild-level policy
+            policy = await self.db.get_completion_policy(interaction.guild_id)
+            assignee_only = policy.get("assignee_only", False)
+            roles = policy.get("allowed_role_ids", [])
+            
+            desc = f"**Assignee Only:** {assignee_only}\n"
+            if roles:
+                role_mentions = ", ".join([f"<@&{rid}>" for rid in roles])
+                desc += f"**Allowed Roles:** {role_mentions}\n"
+            else:
+                desc += "**Allowed Roles:** None (all users can complete)\n"
+            
+            await interaction.response.send_message(
+                embed=self.embeds.message("Guild Completion Policy", desc, emoji="🔒"),
+            )
+            return
+
+        async def on_board_selected(
+            inter: discord.Interaction, board_id: int, board: dict
+        ) -> None:
+            policy = await self.db.get_completion_policy(interaction.guild_id, board_id)
+            assignee_only = policy.get("assignee_only", False)
+            roles = policy.get("allowed_role_ids", [])
+            
+            desc = f"**Board:** {board['name']}\n"
+            desc += f"**Assignee Only:** {assignee_only}\n"
+            if roles:
+                role_mentions = ", ".join([f"<@&{rid}>" for rid in roles])
+                desc += f"**Allowed Roles:** {role_mentions}\n"
+            else:
+                desc += "**Allowed Roles:** None (all users can complete)\n"
+            
+            await inter.response.send_message(
+                embed=self.embeds.message("Board Completion Policy", desc, emoji="🔒"),
+            )
+
+        view = BoardSelectorView(
+            guild_id=interaction.guild_id,
+            db=self.db,
+            embeds=self.embeds,
+            on_select=on_board_selected,
+            placeholder="Select a board...",
+            initial_options=board_options,
+        )
+        await interaction.response.send_message(
+            embed=self.embeds.message(
+                "View Completion Policy",
+                "Select a board to view its completion policy:",
+                emoji="🔒",
+            ),
+            view=view,
+        )
+
+    @app_commands.command(
+        name="set-board-view", description="[Server] Create/update an always-visible board view"
+    )
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.checks.cooldown(1, 10.0)
+    async def set_board_view(self, interaction: discord.Interaction) -> None:
+        from .ui import BoardViewSetupView
+        from .ui.helpers import get_board_choices
+
+        if not interaction.guild_id:
+            await interaction.response.send_message(
+                embed=self.embeds.message(
+                    "Guild Only", "Run this inside a server.", emoji="⚠️"
+                ),
+            )
+            return
+
+        board_options = await get_board_choices(self.db, interaction.guild_id)
+        if not board_options:
+            await interaction.response.send_message(
+                embed=self.embeds.message(
+                    "No Boards",
+                    "This server has no boards yet. Create one with `/create-board`.",
+                    emoji="📭",
+                ),
+            )
+            return
+
+        view = BoardViewSetupView(
+            guild_id=interaction.guild_id,
+            db=self.db,
+            embeds=self.embeds,
+            initial_board_options=board_options,
+        )
+        await interaction.response.send_message(
+            embed=self.embeds.message(
+                "Board View Setup",
+                "Select a board to create or update its always-visible view.",
+                emoji="📋",
+            ),
+            view=view,
+        )
+
+    @app_commands.command(
+        name="remove-board-view", description="[Server] Remove an always-visible board view"
+    )
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.checks.cooldown(1, 3.0)
+    async def remove_board_view(self, interaction: discord.Interaction) -> None:
+        from .ui import BoardSelectorView
+        from .ui.helpers import get_board_choices
+
+        if not interaction.guild_id:
+            await interaction.response.send_message(
+                embed=self.embeds.message(
+                    "Guild Only", "Run this inside a server.", emoji="⚠️"
+                ),
+            )
+            return
+
+        board_options = await get_board_choices(self.db, interaction.guild_id)
+        if not board_options:
+            await interaction.response.send_message(
+                embed=self.embeds.message(
+                    "No Boards",
+                    "This server has no boards yet. Create one with `/create-board`.",
+                    emoji="📭",
+                ),
+            )
+            return
+
+        async def on_board_selected(
+            inter: discord.Interaction, board_id: int, board: dict
+        ) -> None:
+            view_config = await self.db.get_board_view(board_id)
+            if not view_config:
+                await inter.response.send_message(
+                    embed=self.embeds.message(
+                        "No Board View",
+                        f"Board '{board['name']}' doesn't have an always-visible view.",
+                        emoji="⚠️",
+                    ),
+                )
+                return
+
+            # Unpin if pinned
+            if view_config.get("pinned") and view_config.get("message_id"):
+                try:
+                    channel = self.bot.get_channel(view_config["channel_id"])
+                    if channel and isinstance(channel, discord.TextChannel):
+                        message = await channel.fetch_message(view_config["message_id"])
+                        if message.pinned:
+                            await message.unpin()
+                except Exception:
+                    pass  # Ignore errors
+
+            await self.db.delete_board_view(board_id)
+            await inter.response.send_message(
+                embed=self.embeds.message(
+                    "Board View Removed",
+                    f"Always-visible view for board '{board['name']}' has been removed.",
+                    emoji="✅",
+                ),
+            )
+
+        view = BoardSelectorView(
+            guild_id=interaction.guild_id,
+            db=self.db,
+            embeds=self.embeds,
+            on_select=on_board_selected,
+            placeholder="Select a board...",
+            initial_options=board_options,
+        )
+        await interaction.response.send_message(
+            embed=self.embeds.message(
+                "Remove Board View",
+                "Select a board to remove its always-visible view:",
+                emoji="🗑️",
+            ),
+            view=view,
+        )
+
+    @app_commands.command(
         name="mark-feature-completed",
         description="[Server] Manually mark a feature request as completed (admin only)",
     )
@@ -394,7 +621,8 @@ class AdminCog(commands.Cog):
             "`/complete-task` [Server] - Mark a task complete/incomplete\n"
             "`/delete-task` [Server] - Remove a task (select menu, recoverable)\n"
             "`/recover-task` [Server] - Recover a deleted task\n"
-            "`/search-task` [Server] - Full-text search across tasks"
+            "`/search-task` [Server] - Full-text search across tasks\n"
+            "\n*Note: Task completion may be restricted to assignees or specific roles.*"
         )
         embed.add_field(
             name="📝 Tasks",
@@ -408,7 +636,12 @@ class AdminCog(commands.Cog):
             "`/remove-column` [Server] - Remove a column (must be empty)\n"
             "`/toggle-notifications` [Server] - Enable or disable due reminders for this server\n"
             "`/set-reminder` [Server] - Set the daily reminder time (UTC)\n"
-            "`/mark-feature-completed` [Server] - Manually mark a feature request as completed"
+            "`/set-completion-policy` [Server] - Configure who can mark tasks complete\n"
+            "`/view-completion-policy` [Server] - View current completion policy\n"
+            "`/set-board-view` [Server] - Create/update an always-visible board view\n"
+            "`/remove-board-view` [Server] - Remove an always-visible board view\n"
+            "`/mark-feature-completed` [Server] - Manually mark a feature request as completed\n"
+            "\n*Note: Board views auto-update when tasks change.*"
         )
         embed.add_field(
             name="⚙️ Admin",
