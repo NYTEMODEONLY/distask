@@ -2490,6 +2490,11 @@ class CompletionPolicyView(discord.ui.View):
             options=initial_board_options,
         )
         self.board_select.callback = self.on_board_selected
+        
+        # Disable buttons initially (they'll be enabled in show_policy_config)
+        self.assignee_only_button.disabled = True
+        self.role_based_button.disabled = True
+        self.everyone_button.disabled = True
 
     async def on_scope_selected(self, interaction: discord.Interaction) -> None:
         """Handle scope selection."""
@@ -2523,7 +2528,7 @@ class CompletionPolicyView(discord.ui.View):
         if self.board_select in self.children:
             self.remove_item(self.board_select)
         
-        # Add role selector and buttons
+        # Add role selector
         self.role_select = discord.ui.RoleSelect(
             placeholder="Select allowed roles (optional)...",
             min_values=0,
@@ -2532,10 +2537,10 @@ class CompletionPolicyView(discord.ui.View):
         self.role_select.callback = self.on_roles_selected
         self.add_item(self.role_select)
         
-        # Add toggle buttons
-        self.add_item(discord.ui.Button(label="✅ Assignee Only", style=discord.ButtonStyle.primary, custom_id="assignee_only"))
-        self.add_item(discord.ui.Button(label="👥 Role-Based", style=discord.ButtonStyle.primary, custom_id="role_based"))
-        self.add_item(discord.ui.Button(label="🌐 Everyone", style=discord.ButtonStyle.success, custom_id="everyone"))
+        # Enable the existing decorated buttons (they're already in the view)
+        self.assignee_only_button.disabled = False
+        self.role_based_button.disabled = False
+        self.everyone_button.disabled = False
         
         scope_name = "guild" if not board_id else "board"
         await interaction.response.edit_message(
