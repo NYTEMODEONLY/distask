@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Callable, List, Optional
+from typing import TYPE_CHECKING, Callable, Dict, List, Optional
 
 import discord
 
@@ -1220,6 +1220,22 @@ class TaskActionsView(discord.ui.View):
     ) -> None:
         new_status = not self.task.get("completed", False)
         
+        # FR-10: Check completion permissions (only for marking complete, not incomplete)
+        if new_status:
+            from utils.permissions import can_mark_complete
+            
+            if not await can_mark_complete(interaction, self.task, self.db):
+                await interaction.response.send_message(
+                    embed=self.embeds.message(
+                        "Permission Denied",
+                        "You don't have permission to mark this task complete. "
+                        "Only assignees or users with allowed roles can complete tasks.",
+                        emoji="⚠️",
+                    ),
+                    ephemeral=True,
+                )
+                return
+        
         # If marking complete, show notes modal; if marking incomplete, just toggle
         if new_status:
             from .modals import CompletionNotesModal
@@ -1227,6 +1243,14 @@ class TaskActionsView(discord.ui.View):
             async def on_complete(interaction: discord.Interaction, notes: Optional[str]) -> None:
                 await interaction.response.defer(thinking=True)
                 await self.db.toggle_complete(self.task_id, True, completion_notes=notes)
+                
+                # Schedule board view refresh
+                if hasattr(interaction.client, "board_view_updater"):
+                    try:
+                        interaction.client.board_view_updater.schedule_refresh(self.task["board_id"])
+                    except Exception:
+                        pass  # Don't fail if refresh fails
+                
                 status_msg = f"Task #{self.task_id} completed."
                 if notes:
                     status_msg += f"\n\n📝 Notes: {notes}"
@@ -1245,6 +1269,14 @@ class TaskActionsView(discord.ui.View):
         else:
             await interaction.response.defer(thinking=True)
             await self.db.toggle_complete(self.task_id, False)
+            
+            # Schedule board view refresh
+            if hasattr(interaction.client, "board_view_updater"):
+                try:
+                    interaction.client.board_view_updater.schedule_refresh(self.task["board_id"])
+                except Exception:
+                    pass  # Don't fail if refresh fails
+            
             await interaction.followup.send(
                 embed=self.embeds.message("Task Status", f"Task #{self.task_id} reopened.", emoji="↩️"),
             )
@@ -1269,6 +1301,14 @@ class TaskActionsView(discord.ui.View):
         
         # Add user as assignee
         await self.db.add_task_assignees(self.task_id, [user_id])
+        
+        # Schedule board view refresh
+        if hasattr(interaction.client, "board_view_updater"):
+            try:
+                interaction.client.board_view_updater.schedule_refresh(self.task["board_id"])
+            except Exception:
+                pass  # Don't fail if refresh fails
+        
         await interaction.followup.send(
             embed=self.embeds.message("Self Assigned", f"You have been assigned to task #{self.task_id}.", emoji="👤"),
         )
@@ -1295,6 +1335,14 @@ class TaskActionsView(discord.ui.View):
     async def _handle_delete_confirmed(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(thinking=True)
         await self.db.delete_task(self.task_id)
+        
+        # Schedule board view refresh
+        if hasattr(interaction.client, "board_view_updater"):
+            try:
+                interaction.client.board_view_updater.schedule_refresh(self.task["board_id"])
+            except Exception:
+                pass  # Don't fail if refresh fails
+        
         await interaction.followup.send(
             embed=self.embeds.message(
                 "Task Deleted", f"Removed task #{self.task_id}.", emoji="🗑️"
@@ -1434,6 +1482,13 @@ class MoveTaskFlowView(discord.ui.View):
             
             # Move task
             await self.db.move_task(task_id, column_id)
+            
+            # Schedule board view refresh
+            if hasattr(col_inter.client, "board_view_updater"):
+                try:
+                    col_inter.client.board_view_updater.schedule_refresh(task["board_id"])
+                except Exception:
+                    pass  # Don't fail if refresh fails
             
             # Send event notification if available
             if hasattr(col_inter.client, "event_notifier") and col_inter.guild_id:
@@ -1634,6 +1689,13 @@ class AssignTaskFlowView(discord.ui.View):
             
             # Add assignees (they'll be added to existing ones)
             await self.db.add_task_assignees(task_id, selected_user_ids)
+            
+            # Schedule board view refresh
+            if hasattr(user_inter.client, "board_view_updater"):
+                try:
+                    user_inter.client.board_view_updater.schedule_refresh(task["board_id"])
+                except Exception:
+                    pass  # Don't fail if refresh fails
             
             # Send event notification if available
             if hasattr(user_inter.client, "event_notifier") and user_inter.guild_id:
@@ -2185,6 +2247,14 @@ class DeleteTaskConfirmationView(discord.ui.View):
     async def _handle_delete_confirmed(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(thinking=True)
         await self.db.delete_task(self.task_id)
+        
+        # Schedule board view refresh
+        if hasattr(interaction.client, "board_view_updater"):
+            try:
+                interaction.client.board_view_updater.schedule_refresh(self.task["board_id"])
+            except Exception:
+                pass  # Don't fail if refresh fails
+        
         await interaction.followup.send(
             embed=self.embeds.message(
                 "Task Deleted", f"Removed task #{self.task_id}.", emoji="🗑️"
@@ -2382,3 +2452,358 @@ class NotificationActionView(discord.ui.View):
             return int(parts[1]), parts[2]
         # Fallback to instance variables
         return self.task_id, self.notification_type
+
+
+class CompletionPolicyView(discord.ui.View):
+    """View for configuring completion policy (guild or board level)."""
+
+    def __init__(
+        self,
+        *,
+        guild_id: int,
+        db: "Database",
+        embeds: "EmbedFactory",
+        initial_board_options: List[discord.SelectOption],
+        timeout: float = 300.0,
+    ) -> None:
+        super().__init__(timeout=timeout)
+        self.guild_id = guild_id
+        self.db = db
+        self.embeds = embeds
+        self.scope: Optional[str] = None  # "guild" or "board"
+        self.board_id: Optional[int] = None
+
+        # Scope selector (guild or board)
+        self.scope_select = discord.ui.Select(
+            placeholder="Select scope...",
+            options=[
+                discord.SelectOption(label="Guild (all boards)", value="guild", description="Apply to all boards in this server"),
+                discord.SelectOption(label="Board (specific)", value="board", description="Apply to a specific board"),
+            ],
+        )
+        self.scope_select.callback = self.on_scope_selected
+        self.add_item(self.scope_select)
+
+        # Board selector (hidden initially)
+        self.board_select = discord.ui.Select(
+            placeholder="Select a board...",
+            options=initial_board_options,
+        )
+        self.board_select.callback = self.on_board_selected
+
+    async def on_scope_selected(self, interaction: discord.Interaction) -> None:
+        """Handle scope selection."""
+        self.scope = interaction.data["values"][0]
+        
+        if self.scope == "board":
+            # Show board selector
+            await interaction.response.edit_message(
+                embed=self.embeds.message(
+                    "Select Board",
+                    "Select a board to configure completion policy for:",
+                    emoji="📋",
+                ),
+                view=self,
+            )
+            if self.board_select not in self.children:
+                self.add_item(self.board_select)
+        else:
+            # Show policy configuration for guild
+            await self.show_policy_config(interaction, None)
+
+    async def on_board_selected(self, interaction: discord.Interaction) -> None:
+        """Handle board selection."""
+        self.board_id = int(interaction.data["values"][0])
+        await self.show_policy_config(interaction, self.board_id)
+
+    async def show_policy_config(self, interaction: discord.Interaction, board_id: Optional[int]) -> None:
+        """Show policy configuration UI."""
+        # Remove select menus
+        self.remove_item(self.scope_select)
+        if self.board_select in self.children:
+            self.remove_item(self.board_select)
+        
+        # Add role selector and buttons
+        self.role_select = discord.ui.RoleSelect(
+            placeholder="Select allowed roles (optional)...",
+            min_values=0,
+            max_values=25,
+        )
+        self.role_select.callback = self.on_roles_selected
+        self.add_item(self.role_select)
+        
+        # Add toggle buttons
+        self.add_item(discord.ui.Button(label="✅ Assignee Only", style=discord.ButtonStyle.primary, custom_id="assignee_only"))
+        self.add_item(discord.ui.Button(label="👥 Role-Based", style=discord.ButtonStyle.primary, custom_id="role_based"))
+        self.add_item(discord.ui.Button(label="🌐 Everyone", style=discord.ButtonStyle.success, custom_id="everyone"))
+        
+        scope_name = "guild" if not board_id else "board"
+        await interaction.response.edit_message(
+            embed=self.embeds.message(
+                f"Configure {scope_name.title()} Policy",
+                "Select roles that can mark tasks complete, or choose a preset:",
+                emoji="🔒",
+            ),
+            view=self,
+        )
+
+    async def on_roles_selected(self, interaction: discord.Interaction) -> None:
+        """Handle role selection."""
+        role_ids = [int(rid) for rid in interaction.data["values"]]
+        assignee_only = False
+        
+        if self.board_id:
+            await self.db.set_board_completion_policy(self.board_id, assignee_only, role_ids)
+            board = await self.db.get_board(self.guild_id, self.board_id)
+            board_name = board["name"] if board else f"Board #{self.board_id}"
+            await interaction.response.send_message(
+                embed=self.embeds.message(
+                    "Policy Updated",
+                    f"Board '{board_name}' completion policy updated.\n**Roles:** {', '.join([f'<@&{rid}>' for rid in role_ids]) if role_ids else 'None'}",
+                    emoji="✅",
+                ),
+            )
+        else:
+            await self.db.set_guild_completion_policy(self.guild_id, assignee_only, role_ids)
+            await interaction.response.send_message(
+                embed=self.embeds.message(
+                    "Policy Updated",
+                    f"Guild completion policy updated.\n**Roles:** {', '.join([f'<@&{rid}>' for rid in role_ids]) if role_ids else 'None'}",
+                    emoji="✅",
+                ),
+            )
+        self.stop()
+
+    @discord.ui.button(label="✅ Assignee Only", style=discord.ButtonStyle.primary, custom_id="assignee_only")
+    async def assignee_only_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        """Set assignee-only policy."""
+        assignee_only = True
+        role_ids = []
+        
+        if self.board_id:
+            await self.db.set_board_completion_policy(self.board_id, assignee_only, role_ids)
+            board = await self.db.get_board(self.guild_id, self.board_id)
+            board_name = board["name"] if board else f"Board #{self.board_id}"
+            await interaction.response.send_message(
+                embed=self.embeds.message(
+                    "Policy Updated",
+                    f"Board '{board_name}' completion policy: **Assignee Only**",
+                    emoji="✅",
+                ),
+            )
+        else:
+            await self.db.set_guild_completion_policy(self.guild_id, assignee_only, role_ids)
+            await interaction.response.send_message(
+                embed=self.embeds.message(
+                    "Policy Updated",
+                    "Guild completion policy: **Assignee Only**",
+                    emoji="✅",
+                ),
+            )
+        self.stop()
+
+    @discord.ui.button(label="👥 Role-Based", style=discord.ButtonStyle.primary, custom_id="role_based")
+    async def role_based_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        """Prompt for role selection."""
+        await interaction.response.send_message(
+            embed=self.embeds.message(
+                "Select Roles",
+                "Use the role selector above to choose which roles can mark tasks complete.",
+                emoji="👥",
+            ),
+            ephemeral=True,
+        )
+
+    @discord.ui.button(label="🌐 Everyone", style=discord.ButtonStyle.success, custom_id="everyone")
+    async def everyone_button(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        """Set everyone-can-complete policy."""
+        assignee_only = False
+        role_ids = []
+        
+        if self.board_id:
+            await self.db.set_board_completion_policy(self.board_id, assignee_only, role_ids)
+            board = await self.db.get_board(self.guild_id, self.board_id)
+            board_name = board["name"] if board else f"Board #{self.board_id}"
+            await interaction.response.send_message(
+                embed=self.embeds.message(
+                    "Policy Updated",
+                    f"Board '{board_name}' completion policy: **Everyone**",
+                    emoji="✅",
+                ),
+            )
+        else:
+            await self.db.set_guild_completion_policy(self.guild_id, assignee_only, role_ids)
+            await interaction.response.send_message(
+                embed=self.embeds.message(
+                    "Policy Updated",
+                    "Guild completion policy: **Everyone**",
+                    emoji="✅",
+                ),
+            )
+        self.stop()
+
+
+class BoardViewSetupView(discord.ui.View):
+    """View for setting up always-visible board views."""
+
+    def __init__(
+        self,
+        *,
+        guild_id: int,
+        db: "Database",
+        embeds: "EmbedFactory",
+        initial_board_options: List[discord.SelectOption],
+        timeout: float = 300.0,
+    ) -> None:
+        super().__init__(timeout=timeout)
+        self.guild_id = guild_id
+        self.db = db
+        self.embeds = embeds
+        self.board_id: Optional[int] = None
+
+        self.board_select = discord.ui.Select(
+            placeholder="Select a board...",
+            options=initial_board_options,
+        )
+        self.board_select.callback = self.on_board_selected
+        self.add_item(self.board_select)
+
+    async def on_board_selected(self, interaction: discord.Interaction) -> None:
+        """Handle board selection."""
+        self.board_id = int(interaction.data["values"][0])
+        board = await self.db.get_board(self.guild_id, self.board_id)
+        if not board:
+            await interaction.response.send_message(
+                embed=self.embeds.message("Error", "Board not found.", emoji="❌"),
+            )
+            return
+        
+        # Remove board selector
+        self.remove_item(self.board_select)
+        
+        # Add channel selector and pin toggle
+        self.channel_select = discord.ui.ChannelSelect(
+            channel_types=[discord.ChannelType.text],
+            placeholder="Select target channel (default: board channel)...",
+        )
+        self.channel_select.callback = self.on_channel_selected
+        self.add_item(self.channel_select)
+        
+        # Pin toggle button
+        self.pin_button = discord.ui.Button(label="📌 Pin Message", style=discord.ButtonStyle.primary, custom_id="toggle_pin")
+        self.pin_button.callback = self.on_pin_toggle
+        self.add_item(self.pin_button)
+        
+        self.pinned = False
+        
+        await interaction.response.edit_message(
+            embed=self.embeds.message(
+                f"Setup Board View: {board['name']}",
+                "Select a channel for the board view (or use board's channel), and choose whether to pin it.",
+                emoji="📋",
+            ),
+            view=self,
+        )
+
+    async def on_channel_selected(self, interaction: discord.Interaction) -> None:
+        """Handle channel selection and create/update board view."""
+        channel_id = int(interaction.data["values"][0])
+        board = await self.db.get_board(self.guild_id, self.board_id)
+        if not board:
+            await interaction.response.send_message(
+                embed=self.embeds.message("Error", "Board not found.", emoji="❌"),
+            )
+            return
+        
+        # Get channel
+        channel = interaction.guild.get_channel(channel_id)
+        if not channel or not isinstance(channel, discord.TextChannel):
+            await interaction.response.send_message(
+                embed=self.embeds.message("Error", "Invalid channel.", emoji="❌"),
+            )
+            return
+        
+        # Check permissions
+        if not channel.permissions_for(interaction.guild.me).send_messages:
+            await interaction.response.send_message(
+                embed=self.embeds.message("Error", "I don't have permission to send messages in that channel.", emoji="❌"),
+            )
+            return
+        
+        if self.pinned and not channel.permissions_for(interaction.guild.me).manage_messages:
+            await interaction.response.send_message(
+                embed=self.embeds.message("Warning", "I don't have permission to pin messages. View will be created without pinning.", emoji="⚠️"),
+            )
+            self.pinned = False
+        
+        # Fetch board data
+        columns = await self.db.fetch_columns(self.board_id)
+        tasks = await self.db.fetch_tasks(self.board_id)
+        
+        # Group tasks by column
+        tasks_by_column: Dict[int, List[Dict[str, Any]]] = {}
+        for task in tasks:
+            col_id = task["column_id"]
+            if col_id not in tasks_by_column:
+                tasks_by_column[col_id] = []
+            tasks_by_column[col_id].append(task)
+        
+        # Create embed
+        embed = self.embeds.board_snapshot(board, columns, tasks_by_column)
+        
+        # Check if view already exists
+        view_config = await self.db.get_board_view(self.board_id)
+        if view_config and view_config.get("message_id"):
+            # Update existing message
+            try:
+                old_channel = interaction.client.get_channel(view_config["channel_id"])
+                if old_channel and isinstance(old_channel, discord.TextChannel):
+                    old_message = await old_channel.fetch_message(view_config["message_id"])
+                    await old_message.edit(embed=embed)
+                    
+                    # Unpin from old channel if needed
+                    if view_config.get("pinned") and old_message.pinned:
+                        await old_message.unpin()
+                    
+                    # Pin in new channel if requested
+                    if self.pinned:
+                        message = await channel.send(embed=embed)
+                        await message.pin()
+                        await self.db.create_board_view(self.board_id, channel_id, message.id, self.pinned)
+                    else:
+                        message = await channel.send(embed=embed)
+                        await self.db.create_board_view(self.board_id, channel_id, message.id, False)
+                    
+                    await interaction.response.send_message(
+                        embed=self.embeds.message(
+                            "Board View Updated",
+                            f"Board view updated in {channel.mention}",
+                            emoji="✅",
+                        ),
+                    )
+                    self.stop()
+                    return
+            except Exception:
+                pass  # Fall through to create new message
+        
+        # Create new message
+        message = await channel.send(embed=embed)
+        if self.pinned:
+            await message.pin()
+        
+        await self.db.create_board_view(self.board_id, channel_id, message.id, self.pinned)
+        await interaction.response.send_message(
+            embed=self.embeds.message(
+                "Board View Created",
+                f"Always-visible board view created in {channel.mention}",
+                emoji="✅",
+            ),
+        )
+        self.stop()
+
+    async def on_pin_toggle(self, interaction: discord.Interaction) -> None:
+        """Toggle pin setting."""
+        self.pinned = not self.pinned
+        self.pin_button.label = "📌 Pin Message" if not self.pinned else "📌 Pinned"
+        self.pin_button.style = discord.ButtonStyle.success if self.pinned else discord.ButtonStyle.primary
+        await interaction.response.edit_message(view=self)

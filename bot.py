@@ -15,6 +15,7 @@ from utils import Database, EmbedFactory, ReminderScheduler
 from utils.preference_manager import PreferenceManager
 from utils.notifications import NotificationRouter, EventNotifier
 from utils.scheduler_v2 import EnhancedScheduler
+from utils.board_views import BoardViewUpdater
 
 BASE_DIR = Path(__file__).parent
 
@@ -103,6 +104,7 @@ class DisTaskBot(commands.Bot):
         self.notification_router = NotificationRouter(self, self.db, self.pref_manager)
         self.event_notifier = EventNotifier(self, self.db, self.notification_router)
         self.enhanced_scheduler = EnhancedScheduler(self, self.db)
+        self.board_view_updater = BoardViewUpdater(self, self.db, self.embeds)
 
         self.tree.on_error = self.on_app_command_error
 
