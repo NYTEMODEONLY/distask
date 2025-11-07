@@ -588,6 +588,7 @@ class Database:
                        '[]'::json
                    ) as assignee_ids
             FROM tasks t
+            JOIN boards b ON t.board_id = b.id AND (b.deleted_at IS NULL)
             LEFT JOIN task_assignees ta ON t.id = ta.task_id
             WHERE t.board_id = $1 AND (t.deleted_at IS NULL)
             """
@@ -628,6 +629,7 @@ class Database:
                        '[]'::json
                    ) as assignee_ids
             FROM tasks t
+            JOIN boards b ON t.board_id = b.id AND (b.deleted_at IS NULL)
             LEFT JOIN task_assignees ta ON t.id = ta.task_id
             WHERE t.id = $1 AND (t.deleted_at IS NULL)
             GROUP BY t.id
@@ -658,7 +660,17 @@ class Database:
             params.append(value)
         params.append(task_id)
         result = await self._execute(
-            f"UPDATE tasks SET {', '.join(assignments)} WHERE id = ${len(params)}",
+            f"""
+            UPDATE tasks 
+            SET {', '.join(assignments)} 
+            WHERE id = ${len(params)} 
+              AND deleted_at IS NULL
+              AND EXISTS (
+                  SELECT 1 FROM boards b 
+                  WHERE b.id = tasks.board_id 
+                    AND b.deleted_at IS NULL
+              )
+            """,
             tuple(params),
             rowcount=True,
         )
@@ -667,7 +679,17 @@ class Database:
     async def delete_task(self, task_id: int) -> bool:
         """Soft delete a task by setting deleted_at timestamp."""
         result = await self._execute(
-            "UPDATE tasks SET deleted_at = $1 WHERE id = $2 AND deleted_at IS NULL",
+            """
+            UPDATE tasks 
+            SET deleted_at = $1 
+            WHERE id = $2 
+              AND deleted_at IS NULL
+              AND EXISTS (
+                  SELECT 1 FROM boards b 
+                  WHERE b.id = tasks.board_id 
+                    AND b.deleted_at IS NULL
+              )
+            """,
             (_utcnow(), task_id),
             rowcount=True,
         )
