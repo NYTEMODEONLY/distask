@@ -167,8 +167,9 @@ class ReminderScheduler:
                 embed = self.embed_factory.reminder_digest(guild.name, channel_tasks)
                 await channel.send(embed=embed)
                 self.logger.info("Sent daily digest to channel %s (%s tasks)", channel_id, len(channel_tasks))
-            except discord.HTTPException as exc:
-                # If send failed, don't mark as sent so it can retry
+            except Exception as exc:
+                # If send failed for any reason, don't mark as sent so it can retry
+                # This handles HTTPException, TimeoutError, ClientException, etc.
                 self._channel_last_run.pop(channel_id, None)
                 all_succeeded = False
                 self.logger.warning("Failed to send reminder to channel %s: %s", channel_id, exc)
