@@ -136,13 +136,13 @@ class Database:
                 "ALTER TABLE boards ADD COLUMN IF NOT EXISTS deleted_at TEXT",
                 "ALTER TABLE columns ADD COLUMN IF NOT EXISTS deleted_at TEXT",
                 # Partial unique indexes that ignore deleted rows (allow recreating with same name)
-                # PostgreSQL creates unique constraints as indexes, so we drop the constraint's index
-                # and replace with partial unique indexes that only apply to non-deleted rows
-                "DROP INDEX IF EXISTS boards_guild_id_name_key",
-                "DROP INDEX IF EXISTS boards_guild_id_name_idx",
+                # Drop the unique constraints first (they're constraints, not indexes)
+                "ALTER TABLE boards DROP CONSTRAINT IF EXISTS boards_guild_id_name_key",
+                "ALTER TABLE boards DROP CONSTRAINT IF EXISTS boards_guild_id_name_unique",
+                "ALTER TABLE columns DROP CONSTRAINT IF EXISTS columns_board_id_name_key",
+                "ALTER TABLE columns DROP CONSTRAINT IF EXISTS columns_board_id_name_unique",
+                # Create partial unique indexes that only apply to non-deleted rows
                 "CREATE UNIQUE INDEX IF NOT EXISTS boards_guild_id_name_unique ON boards(guild_id, name) WHERE deleted_at IS NULL",
-                "DROP INDEX IF EXISTS columns_board_id_name_key",
-                "DROP INDEX IF EXISTS columns_board_id_name_idx",
                 "CREATE UNIQUE INDEX IF NOT EXISTS columns_board_id_name_unique ON columns(board_id, name) WHERE deleted_at IS NULL",
                 # FR-6: Always-visible boards
                 """
@@ -421,7 +421,7 @@ class Database:
         rows = await self._execute(
             """
             SELECT bv.* FROM board_views bv
-            JOIN boards b ON bv.board_id = b.id
+            JOIN boards b ON bv.board_id = b.id AND (b.deleted_at IS NULL)
             WHERE b.guild_id = $1
             """,
             (guild_id,),
@@ -853,7 +853,7 @@ class Database:
                        '[]'::json
                    ) as assignee_ids
             FROM tasks t
-            JOIN boards ON t.board_id = boards.id
+            JOIN boards ON t.board_id = boards.id AND (boards.deleted_at IS NULL)
             LEFT JOIN task_assignees ta ON t.id = ta.task_id
             WHERE boards.guild_id = $1
               AND (t.deleted_at IS NULL)
@@ -986,7 +986,7 @@ class Database:
                        '[]'::json
                    ) as assignee_ids
             FROM tasks t
-            JOIN boards ON t.board_id = boards.id
+            JOIN boards ON t.board_id = boards.id AND (boards.deleted_at IS NULL)
             LEFT JOIN task_assignees ta ON t.id = ta.task_id
             WHERE t.completed = FALSE AND t.due_date IS NOT NULL AND t.due_date <= $1
               AND (t.deleted_at IS NULL)
@@ -1514,7 +1514,7 @@ class Database:
                 boards.guild_id
             FROM snoozed_reminders sr
             JOIN tasks t ON sr.task_id = t.id
-            JOIN boards ON t.board_id = boards.id
+            JOIN boards ON t.board_id = boards.id AND (boards.deleted_at IS NULL)
             WHERE sr.snooze_until <= $1
             ORDER BY sr.snooze_until ASC
             """,
