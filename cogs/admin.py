@@ -487,20 +487,39 @@ class AdminCog(commands.Cog):
                 ),
             )
 
-        view = BoardSelectorView(
+    @app_commands.command(name="recover-column", description="[Server] Recover a deleted column")
+    @app_commands.checks.has_permissions(manage_channels=True)
+    @app_commands.checks.cooldown(1, 3.0)
+    async def recover_column(self, interaction: discord.Interaction) -> None:
+        from .ui import RecoverColumnFlowView
+        from .ui.helpers import get_board_choices
+
+        if not interaction.guild_id:
+            await interaction.response.send_message(
+                embed=self.embeds.message("Guild Only", "Run this inside a server.", emoji="⚠️"),
+            )
+            return
+
+        board_options = await get_board_choices(self.db, interaction.guild_id)
+        if not board_options:
+            await interaction.response.send_message(
+                embed=self.embeds.message(
+                    "No Boards",
+                    "This server has no boards yet. Create one with `/create-board`.",
+                    emoji="📭",
+                ),
+            )
+            return
+
+        view = RecoverColumnFlowView(
             guild_id=interaction.guild_id,
             db=self.db,
             embeds=self.embeds,
-            on_select=on_board_selected,
-            placeholder="Select a board...",
-            initial_options=board_options,
+            initial_board_options=board_options,
         )
+
         await interaction.response.send_message(
-            embed=self.embeds.message(
-                "Remove Board View",
-                "Select a board to remove its always-visible view:",
-                emoji="🗑️",
-            ),
+            embed=self.embeds.message("Recover Column", "Select a board to recover a deleted column:", emoji="♻️"),
             view=view,
         )
 

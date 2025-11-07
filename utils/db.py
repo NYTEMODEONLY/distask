@@ -132,6 +132,9 @@ class Database:
                 "ALTER TABLE guilds ADD COLUMN IF NOT EXISTS completion_allowed_roles BIGINT[] NOT NULL DEFAULT '{}'",
                 "ALTER TABLE boards ADD COLUMN IF NOT EXISTS completion_assignee_only BOOLEAN",
                 "ALTER TABLE boards ADD COLUMN IF NOT EXISTS completion_allowed_roles BIGINT[]",
+                # FR-19: Soft delete for boards and columns
+                "ALTER TABLE boards ADD COLUMN IF NOT EXISTS deleted_at TEXT",
+                "ALTER TABLE columns ADD COLUMN IF NOT EXISTS deleted_at TEXT",
                 # FR-6: Always-visible boards
                 """
                 CREATE TABLE IF NOT EXISTS board_views (
@@ -442,40 +445,45 @@ class Database:
         return board_id
 
     async def delete_board(self, guild_id: int, board_id: int) -> bool:
+        """Soft delete a board by setting deleted_at timestamp."""
         result = await self._execute(
-            "DELETE FROM boards WHERE guild_id = $1 AND id = $2",
-            (guild_id, board_id),
+            "UPDATE boards SET deleted_at = $1 WHERE guild_id = $2 AND id = $3 AND deleted_at IS NULL",
+            (_utcnow(), guild_id, board_id),
             rowcount=True,
         )
         return bool(result)
 
     async def fetch_boards(self, guild_id: int) -> List[Dict[str, Any]]:
+        """Fetch all non-deleted boards for a guild."""
         rows = await self._execute(
-            "SELECT * FROM boards WHERE guild_id = $1 ORDER BY created_at DESC",
+            "SELECT * FROM boards WHERE guild_id = $1 AND (deleted_at IS NULL) ORDER BY created_at DESC",
             (guild_id,),
             fetchall=True,
         )
         return [dict(row) for row in rows or []]
 
     async def get_board(self, guild_id: int, board_id: int) -> Optional[Dict[str, Any]]:
+        """Get a non-deleted board by ID."""
         row = await self._execute(
-            "SELECT * FROM boards WHERE guild_id = $1 AND id = $2",
+            "SELECT * FROM boards WHERE guild_id = $1 AND id = $2 AND (deleted_at IS NULL)",
             (guild_id, board_id),
             fetchone=True,
         )
         return dict(row) if row else None
 
     async def get_board_by_name(self, guild_id: int, name: str) -> Optional[Dict[str, Any]]:
+        """Get a non-deleted board by name."""
         row = await self._execute(
-            "SELECT * FROM boards WHERE guild_id = $1 AND name = $2",
+            "SELECT * FROM boards WHERE guild_id = $1 AND name = $2 AND (deleted_at IS NULL)",
             (guild_id, name),
             fetchone=True,
         )
         return dict(row) if row else None
 
     async def fetch_columns(self, board_id: int) -> List[Dict[str, Any]]:
+        """Fetch all non-deleted columns for a board."""
         rows = await self._execute(
-            "SELECT * FROM columns WHERE board_id = $1 ORDER BY position",
+            "SELECT * FROM columns WHERE board_id = $1 AND (deleted_at IS NULL) ORDER BY position",
             (board_id,),
             fetchall=True,
         )
@@ -498,25 +506,27 @@ class Database:
         return column_row["id"]
 
     async def remove_column(self, board_id: int, name: str) -> bool:
+        """Soft delete a column by setting deleted_at timestamp."""
         column = await self._execute(
-            "SELECT id FROM columns WHERE board_id = $1 AND name = $2",
+            "SELECT id FROM columns WHERE board_id = $1 AND name = $2 AND (deleted_at IS NULL)",
             (board_id, name),
             fetchone=True,
         )
         if not column:
             return False
         tasks = await self._execute(
-            "SELECT COUNT(1) as c FROM tasks WHERE column_id = $1",
+            "SELECT COUNT(1) as c FROM tasks WHERE column_id = $1 AND (deleted_at IS NULL)",
             (column["id"],),
             fetchone=True,
         )
         if tasks and tasks["c"]:
             raise ValueError("Column still has tasks. Move them before deleting.")
-        await self._execute(
-            "DELETE FROM columns WHERE id = $1",
-            (column["id"],),
+        result = await self._execute(
+            "UPDATE columns SET deleted_at = $1 WHERE id = $2 AND deleted_at IS NULL",
+            (_utcnow(), column["id"]),
+            rowcount=True,
         )
-        return True
+        return bool(result)
 
     async def create_task(
         self,
@@ -662,6 +672,42 @@ class Database:
             rowcount=True,
         )
         return bool(result)
+    
+    async def recover_board(self, guild_id: int, board_id: int) -> bool:
+        """Recover a soft-deleted board by clearing deleted_at."""
+        result = await self._execute(
+            "UPDATE boards SET deleted_at = NULL WHERE guild_id = $1 AND id = $2 AND deleted_at IS NOT NULL",
+            (guild_id, board_id),
+            rowcount=True,
+        )
+        return bool(result)
+    
+    async def recover_column(self, board_id: int, column_id: int) -> bool:
+        """Recover a soft-deleted column by clearing deleted_at."""
+        result = await self._execute(
+            "UPDATE columns SET deleted_at = NULL WHERE board_id = $1 AND id = $2 AND deleted_at IS NOT NULL",
+            (board_id, column_id),
+            rowcount=True,
+        )
+        return bool(result)
+    
+    async def fetch_deleted_boards(self, guild_id: int) -> List[Dict[str, Any]]:
+        """Fetch soft-deleted boards for a guild."""
+        rows = await self._execute(
+            "SELECT * FROM boards WHERE guild_id = $1 AND deleted_at IS NOT NULL ORDER BY deleted_at DESC",
+            (guild_id,),
+            fetchall=True,
+        )
+        return [dict(row) for row in rows or []]
+    
+    async def fetch_deleted_columns(self, board_id: int) -> List[Dict[str, Any]]:
+        """Fetch soft-deleted columns for a board."""
+        rows = await self._execute(
+            "SELECT * FROM columns WHERE board_id = $1 AND deleted_at IS NOT NULL ORDER BY deleted_at DESC",
+            (board_id,),
+            fetchall=True,
+        )
+        return [dict(row) for row in rows or []]
     
     async def fetch_deleted_tasks(self, guild_id: int, board_id: Optional[int] = None) -> List[Dict[str, Any]]:
         """Fetch soft-deleted tasks for a guild or board."""
@@ -900,8 +946,8 @@ class Database:
             """
             SELECT c.id, c.name, COUNT(t.id) AS task_count
             FROM columns c
-            LEFT JOIN tasks t ON t.column_id = c.id AND t.completed = FALSE
-            WHERE c.board_id = $1
+            LEFT JOIN tasks t ON t.column_id = c.id AND t.completed = FALSE AND (t.deleted_at IS NULL)
+            WHERE c.board_id = $1 AND (c.deleted_at IS NULL)
             GROUP BY c.id, c.name
             ORDER BY c.position
             """,
@@ -968,16 +1014,18 @@ class Database:
             )
 
     async def get_column_by_name(self, board_id: int, name: str) -> Optional[Dict[str, Any]]:
+        """Get a non-deleted column by name."""
         row = await self._execute(
-            "SELECT * FROM columns WHERE board_id = $1 AND LOWER(name) = LOWER($2)",
+            "SELECT * FROM columns WHERE board_id = $1 AND LOWER(name) = LOWER($2) AND (deleted_at IS NULL)",
             (board_id, name),
             fetchone=True,
         )
         return dict(row) if row else None
 
     async def get_column_by_id(self, column_id: int) -> Optional[Dict[str, Any]]:
+        """Get a non-deleted column by ID."""
         row = await self._execute(
-            "SELECT * FROM columns WHERE id = $1",
+            "SELECT * FROM columns WHERE id = $1 AND (deleted_at IS NULL)",
             (column_id,),
             fetchone=True,
         )

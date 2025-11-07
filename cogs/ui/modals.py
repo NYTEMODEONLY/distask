@@ -151,12 +151,17 @@ class CreateBoardModal(discord.ui.Modal):
         try:
             channel = await interaction.guild.fetch_channel(self.channel_id)
 
-            # Check channel type - more flexible check
-            if channel.type != discord.ChannelType.text:
+            # Check channel type - support text channels and threads
+            if channel.type not in (
+                discord.ChannelType.text,
+                discord.ChannelType.public_thread,
+                discord.ChannelType.private_thread,
+                discord.ChannelType.news_thread,
+            ):
                 await interaction.response.send_message(
                     embed=self.embeds.message(
                         "Invalid Channel",
-                        "The selected channel is not a text channel.",
+                        "The selected channel must be a text channel or thread.",
                         emoji="⚠️",
                     ),
                 )
