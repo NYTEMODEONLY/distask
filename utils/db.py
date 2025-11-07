@@ -72,7 +72,9 @@ class Database:
                     due_date TEXT,
                     created_by BIGINT,
                     created_at TEXT NOT NULL,
-                    completed BOOLEAN NOT NULL DEFAULT FALSE
+                    completed BOOLEAN NOT NULL DEFAULT FALSE,
+                    completion_notes TEXT,
+                    deleted_at TEXT
                 )
                 """,
                 """
@@ -123,6 +125,25 @@ class Database:
                 "ALTER TABLE feature_requests ADD COLUMN IF NOT EXISTS community_upvotes INTEGER NOT NULL DEFAULT 0",
                 "ALTER TABLE feature_requests ADD COLUMN IF NOT EXISTS community_downvotes INTEGER NOT NULL DEFAULT 0",
                 "ALTER TABLE feature_requests ADD COLUMN IF NOT EXISTS community_duplicate_votes INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completion_notes TEXT",
+                "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS deleted_at TEXT",
+                # FR-10: Completion permission gating
+                "ALTER TABLE guilds ADD COLUMN IF NOT EXISTS completion_assignee_only BOOLEAN NOT NULL DEFAULT FALSE",
+                "ALTER TABLE guilds ADD COLUMN IF NOT EXISTS completion_allowed_roles BIGINT[] NOT NULL DEFAULT '{}'",
+                "ALTER TABLE boards ADD COLUMN IF NOT EXISTS completion_assignee_only BOOLEAN",
+                "ALTER TABLE boards ADD COLUMN IF NOT EXISTS completion_allowed_roles BIGINT[]",
+                # FR-6: Always-visible boards
+                """
+                CREATE TABLE IF NOT EXISTS board_views (
+                    board_id BIGINT PRIMARY KEY REFERENCES boards(id) ON DELETE CASCADE,
+                    channel_id BIGINT NOT NULL,
+                    message_id BIGINT,
+                    pinned BOOLEAN NOT NULL DEFAULT FALSE,
+                    updated_at TEXT NOT NULL
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_board_views_board ON board_views(board_id)",
+                "CREATE INDEX IF NOT EXISTS idx_board_views_channel ON board_views(channel_id)",
                 # Migrate existing assignee_id values to task_assignees table (one-time migration)
                 """
                 INSERT INTO task_assignees (task_id, user_id, assigned_at)
@@ -134,6 +155,111 @@ class Database:
                   )
                 ON CONFLICT (task_id, user_id) DO NOTHING
                 """,
+                # User-level notification preferences
+                """
+                CREATE TABLE IF NOT EXISTS user_notification_preferences (
+                    user_id BIGINT NOT NULL,
+                    guild_id BIGINT REFERENCES guilds(guild_id) ON DELETE CASCADE,
+                    delivery_method TEXT,
+                    timezone TEXT,
+                    quiet_hours_start TEXT,
+                    quiet_hours_end TEXT,
+                    enable_due_date_reminders BOOLEAN DEFAULT TRUE,
+                    enable_event_alerts BOOLEAN DEFAULT TRUE,
+                    enable_daily_digest BOOLEAN DEFAULT TRUE,
+                    enable_weekly_digest BOOLEAN DEFAULT FALSE,
+                    enable_custom_reminders BOOLEAN DEFAULT TRUE,
+                    due_date_advance_days TEXT DEFAULT '[1, 3]',
+                    daily_digest_time TEXT,
+                    weekly_digest_day INTEGER,
+                    weekly_digest_time TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (user_id, guild_id)
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_user_prefs_user ON user_notification_preferences(user_id)",
+                "CREATE INDEX IF NOT EXISTS idx_user_prefs_guild ON user_notification_preferences(guild_id)",
+                # Guild-level notification defaults
+                """
+                CREATE TABLE IF NOT EXISTS guild_notification_defaults (
+                    guild_id BIGINT PRIMARY KEY REFERENCES guilds(guild_id) ON DELETE CASCADE,
+                    delivery_method TEXT DEFAULT 'channel',
+                    enable_due_date_reminders BOOLEAN DEFAULT TRUE,
+                    enable_event_alerts BOOLEAN DEFAULT TRUE,
+                    enable_daily_digest BOOLEAN DEFAULT TRUE,
+                    enable_weekly_digest BOOLEAN DEFAULT FALSE,
+                    due_date_advance_days TEXT DEFAULT '[1]',
+                    daily_digest_time TEXT DEFAULT '09:00',
+                    weekly_digest_day INTEGER DEFAULT 1,
+                    weekly_digest_time TEXT DEFAULT '09:00',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """,
+                # Multiple reminder schedules per guild/user
+                """
+                CREATE TABLE IF NOT EXISTS reminder_schedules (
+                    id BIGSERIAL PRIMARY KEY,
+                    guild_id BIGINT REFERENCES guilds(guild_id) ON DELETE CASCADE,
+                    user_id BIGINT,
+                    reminder_time TEXT NOT NULL,
+                    enabled BOOLEAN DEFAULT TRUE,
+                    created_at TEXT NOT NULL
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_reminder_schedules_guild ON reminder_schedules(guild_id)",
+                "CREATE INDEX IF NOT EXISTS idx_reminder_schedules_user ON reminder_schedules(user_id)",
+                # Notification history for deduplication and analytics
+                """
+                CREATE TABLE IF NOT EXISTS notification_history (
+                    id BIGSERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    guild_id BIGINT REFERENCES guilds(guild_id) ON DELETE CASCADE,
+                    task_id BIGINT REFERENCES tasks(id) ON DELETE CASCADE,
+                    notification_type TEXT NOT NULL,
+                    sent_at TEXT NOT NULL,
+                    acknowledged_at TEXT,
+                    delivery_method TEXT,
+                    notification_data JSONB DEFAULT '{}'::jsonb
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_notification_history_user ON notification_history(user_id)",
+                "CREATE INDEX IF NOT EXISTS idx_notification_history_task ON notification_history(task_id)",
+                "CREATE INDEX IF NOT EXISTS idx_notification_history_type ON notification_history(notification_type)",
+                "CREATE INDEX IF NOT EXISTS idx_notification_history_sent ON notification_history(sent_at)",
+                # Snoozed reminders
+                """
+                CREATE TABLE IF NOT EXISTS snoozed_reminders (
+                    id BIGSERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    task_id BIGINT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                    notification_type TEXT NOT NULL,
+                    snoozed_at TEXT NOT NULL,
+                    snooze_until TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_snoozed_reminders_user ON snoozed_reminders(user_id)",
+                "CREATE INDEX IF NOT EXISTS idx_snoozed_reminders_task ON snoozed_reminders(task_id)",
+                "CREATE INDEX IF NOT EXISTS idx_snoozed_reminders_until ON snoozed_reminders(snooze_until)",
+                # Custom reminder rules
+                """
+                CREATE TABLE IF NOT EXISTS custom_reminder_rules (
+                    id BIGSERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    guild_id BIGINT REFERENCES guilds(guild_id) ON DELETE CASCADE,
+                    board_id BIGINT REFERENCES boards(id) ON DELETE CASCADE,
+                    rule_name TEXT NOT NULL,
+                    rule_pattern TEXT NOT NULL,
+                    rule_data JSONB DEFAULT '{}'::jsonb,
+                    enabled BOOLEAN DEFAULT TRUE,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """,
+                "CREATE INDEX IF NOT EXISTS idx_custom_rules_user ON custom_reminder_rules(user_id)",
+                "CREATE INDEX IF NOT EXISTS idx_custom_rules_guild ON custom_reminder_rules(guild_id)",
             ]
             for statement in schema_statements:
                 await conn.execute(statement)
@@ -178,6 +304,118 @@ class Database:
             "UPDATE guilds SET reminder_time = $1 WHERE guild_id = $2",
             (reminder_time, guild_id),
         )
+
+    # FR-10: Completion policy methods
+    async def set_guild_completion_policy(
+        self, guild_id: int, assignee_only: bool, allowed_role_ids: List[int]
+    ) -> None:
+        """Set guild-level completion policy."""
+        await self.ensure_guild(guild_id)
+        await self._execute(
+            "UPDATE guilds SET completion_assignee_only = $1, completion_allowed_roles = $2 WHERE guild_id = $3",
+            (assignee_only, allowed_role_ids, guild_id),
+        )
+
+    async def set_board_completion_policy(
+        self, board_id: int, assignee_only: Optional[bool], allowed_role_ids: Optional[List[int]]
+    ) -> None:
+        """Set board-level completion policy (NULL values mean inherit from guild)."""
+        updates = []
+        params = []
+        if assignee_only is not None:
+            updates.append(f"completion_assignee_only = ${len(params) + 1}")
+            params.append(assignee_only)
+        if allowed_role_ids is not None:
+            updates.append(f"completion_allowed_roles = ${len(params) + 1}")
+            params.append(allowed_role_ids)
+        if updates:
+            params.append(board_id)
+            await self._execute(
+                f"UPDATE boards SET {', '.join(updates)} WHERE id = ${len(params)}",
+                tuple(params),
+            )
+
+    async def get_completion_policy(self, guild_id: int, board_id: Optional[int] = None) -> Dict[str, Any]:
+        """Get effective completion policy (board overrides guild, NULL means inherit)."""
+        guild = await self.get_guild_settings(guild_id)
+        guild_assignee_only = guild.get("completion_assignee_only", False)
+        guild_roles = guild.get("completion_allowed_roles", []) or []
+        
+        if board_id:
+            board = await self.get_board(guild_id, board_id)
+            if board:
+                assignee_only = board.get("completion_assignee_only")
+                if assignee_only is None:
+                    assignee_only = guild_assignee_only
+                else:
+                    assignee_only = bool(assignee_only)
+                
+                allowed_roles = board.get("completion_allowed_roles")
+                if allowed_roles is None:
+                    allowed_roles = guild_roles
+                else:
+                    allowed_roles = allowed_roles if allowed_roles else []
+                
+                return {
+                    "assignee_only": assignee_only,
+                    "allowed_role_ids": allowed_roles if isinstance(allowed_roles, list) else (allowed_roles or []),
+                }
+        
+        return {
+            "assignee_only": guild_assignee_only,
+            "allowed_role_ids": guild_roles if isinstance(guild_roles, list) else (guild_roles or []),
+        }
+
+    # FR-6: Board view methods
+    async def create_board_view(
+        self, board_id: int, channel_id: int, message_id: Optional[int], pinned: bool
+    ) -> None:
+        """Create or update a board view."""
+        await self._execute(
+            """
+            INSERT INTO board_views (board_id, channel_id, message_id, pinned, updated_at)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (board_id) DO UPDATE
+            SET channel_id = $2, message_id = $3, pinned = $4, updated_at = $5
+            """,
+            (board_id, channel_id, message_id, pinned, _utcnow()),
+        )
+
+    async def get_board_view(self, board_id: int) -> Optional[Dict[str, Any]]:
+        """Get board view configuration."""
+        row = await self._execute(
+            "SELECT * FROM board_views WHERE board_id = $1",
+            (board_id,),
+            fetchone=True,
+        )
+        return dict(row) if row else None
+
+    async def update_board_view_message(self, board_id: int, message_id: int) -> None:
+        """Update the message_id for a board view."""
+        await self._execute(
+            "UPDATE board_views SET message_id = $1, updated_at = $2 WHERE board_id = $3",
+            (message_id, _utcnow(), board_id),
+        )
+
+    async def delete_board_view(self, board_id: int) -> None:
+        """Delete a board view."""
+        await self._execute(
+            "DELETE FROM board_views WHERE board_id = $1",
+            (board_id,),
+        )
+
+    async def list_board_views(self, guild_id: int) -> List[Dict[str, Any]]:
+        """List all board views for a guild."""
+        rows = await self._execute(
+            """
+            SELECT bv.* FROM board_views bv
+            JOIN boards b ON bv.board_id = b.id
+            WHERE b.guild_id = $1
+            """,
+            (guild_id,),
+            fetchall=True,
+        )
+        return [dict(row) for row in rows or []]
 
     async def create_board(
         self,
@@ -332,7 +570,7 @@ class Database:
                    ) as assignee_ids
             FROM tasks t
             LEFT JOIN task_assignees ta ON t.id = ta.task_id
-            WHERE t.board_id = $1
+            WHERE t.board_id = $1 AND (t.deleted_at IS NULL)
             """
         ]
         params: List[Any] = [board_id]
@@ -372,7 +610,7 @@ class Database:
                    ) as assignee_ids
             FROM tasks t
             LEFT JOIN task_assignees ta ON t.id = ta.task_id
-            WHERE t.id = $1
+            WHERE t.id = $1 AND (t.deleted_at IS NULL)
             GROUP BY t.id
             """,
             (task_id,),
@@ -408,12 +646,58 @@ class Database:
         return bool(result)
 
     async def delete_task(self, task_id: int) -> bool:
+        """Soft delete a task by setting deleted_at timestamp."""
         result = await self._execute(
-            "DELETE FROM tasks WHERE id = $1",
+            "UPDATE tasks SET deleted_at = $1 WHERE id = $2 AND deleted_at IS NULL",
+            (_utcnow(), task_id),
+            rowcount=True,
+        )
+        return bool(result)
+    
+    async def recover_task(self, task_id: int) -> bool:
+        """Recover a soft-deleted task by clearing deleted_at."""
+        result = await self._execute(
+            "UPDATE tasks SET deleted_at = NULL WHERE id = $1 AND deleted_at IS NOT NULL",
             (task_id,),
             rowcount=True,
         )
         return bool(result)
+    
+    async def fetch_deleted_tasks(self, guild_id: int, board_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Fetch soft-deleted tasks for a guild or board."""
+        query = """
+            SELECT t.*,
+                   COALESCE(
+                       json_agg(DISTINCT ta.user_id) FILTER (WHERE ta.user_id IS NOT NULL),
+                       '[]'::json
+                   ) as assignee_ids,
+                   boards.name AS board_name,
+                   boards.guild_id
+            FROM tasks t
+            JOIN boards ON t.board_id = boards.id
+            LEFT JOIN task_assignees ta ON t.id = ta.task_id
+            WHERE boards.guild_id = $1 AND t.deleted_at IS NOT NULL
+        """
+        params: List[Any] = [guild_id]
+        if board_id is not None:
+            query += " AND t.board_id = $2"
+            params.append(board_id)
+        query += " GROUP BY t.id, boards.name, boards.guild_id ORDER BY t.deleted_at DESC"
+        
+        rows = await self._execute(query, tuple(params), fetchall=True)
+        tasks = []
+        for row in rows or []:
+            task_dict = dict(row)
+            # Convert JSON array to Python list
+            if isinstance(task_dict.get("assignee_ids"), list):
+                task_dict["assignee_ids"] = task_dict["assignee_ids"]
+            elif task_dict.get("assignee_ids"):
+                import json
+                task_dict["assignee_ids"] = json.loads(task_dict["assignee_ids"]) if isinstance(task_dict["assignee_ids"], str) else []
+            else:
+                task_dict["assignee_ids"] = []
+            tasks.append(task_dict)
+        return tasks
     
     # Multiple assignees management methods
     async def add_task_assignees(self, task_id: int, user_ids: List[int]) -> None:
@@ -517,6 +801,7 @@ class Database:
             JOIN boards ON t.board_id = boards.id
             LEFT JOIN task_assignees ta ON t.id = ta.task_id
             WHERE boards.guild_id = $1
+              AND (t.deleted_at IS NULL)
               AND (
                   t.title ILIKE $2 OR
                   COALESCE(t.description, '') ILIKE $3
@@ -649,6 +934,7 @@ class Database:
             JOIN boards ON t.board_id = boards.id
             LEFT JOIN task_assignees ta ON t.id = ta.task_id
             WHERE t.completed = FALSE AND t.due_date IS NOT NULL AND t.due_date <= $1
+              AND (t.deleted_at IS NULL)
             GROUP BY t.id, boards.name, boards.channel_id, boards.guild_id
             ORDER BY t.due_date ASC
             """,
@@ -700,8 +986,14 @@ class Database:
     async def move_task(self, task_id: int, column_id: int) -> bool:
         return await self.update_task(task_id, column_id=column_id)
 
-    async def toggle_complete(self, task_id: int, completed: bool) -> bool:
-        return await self.update_task(task_id, completed=completed)
+    async def toggle_complete(self, task_id: int, completed: bool, completion_notes: Optional[str] = None) -> bool:
+        updates = {"completed": completed}
+        if completed and completion_notes:
+            updates["completion_notes"] = completion_notes
+        elif not completed:
+            # Clear notes when marking incomplete
+            updates["completion_notes"] = None
+        return await self.update_task(task_id, **updates)
 
     async def create_feature_request(
         self,
@@ -958,6 +1250,280 @@ class Database:
             "commit_message": commit_message,
         }
         await self.append_feature_history(request_id, history_entry)
+
+    # ========== Notification Preferences ==========
+
+    async def get_user_notification_prefs(self, user_id: int, guild_id: int) -> Optional[Dict[str, Any]]:
+        """Get user notification preferences for a specific guild."""
+        row = await self._execute(
+            "SELECT * FROM user_notification_preferences WHERE user_id = $1 AND guild_id = $2",
+            (user_id, guild_id),
+            fetchone=True,
+        )
+        return dict(row) if row else None
+
+    async def set_user_notification_prefs(
+        self,
+        user_id: int,
+        guild_id: int,
+        **preferences: Any,
+    ) -> None:
+        """Set or update user notification preferences."""
+        await self.ensure_guild(guild_id)
+        existing = await self.get_user_notification_prefs(user_id, guild_id)
+        now = _utcnow()
+
+        if existing:
+            # Update existing preferences
+            if preferences:
+                assignments = []
+                params: List[Any] = []
+                for idx, (key, value) in enumerate(preferences.items(), start=1):
+                    assignments.append(f"{key} = ${idx}")
+                    params.append(value)
+                assignments.append(f"updated_at = ${len(params) + 1}")
+                params.append(now)
+                params.extend([user_id, guild_id])
+                await self._execute(
+                    f"UPDATE user_notification_preferences SET {', '.join(assignments)} WHERE user_id = ${len(params) - 1} AND guild_id = ${len(params)}",
+                    tuple(params),
+                )
+        else:
+            # Insert new preferences
+            preferences.setdefault("created_at", now)
+            preferences["updated_at"] = now
+            columns = ["user_id", "guild_id"] + list(preferences.keys())
+            placeholders = [f"${i+1}" for i in range(len(columns))]
+            values = [user_id, guild_id] + list(preferences.values())
+            await self._execute(
+                f"INSERT INTO user_notification_preferences ({', '.join(columns)}) VALUES ({', '.join(placeholders)})",
+                tuple(values),
+            )
+
+    async def get_guild_notification_defaults(self, guild_id: int) -> Optional[Dict[str, Any]]:
+        """Get guild-level notification defaults."""
+        await self.ensure_guild(guild_id)
+        row = await self._execute(
+            "SELECT * FROM guild_notification_defaults WHERE guild_id = $1",
+            (guild_id,),
+            fetchone=True,
+        )
+        return dict(row) if row else None
+
+    async def set_guild_notification_defaults(self, guild_id: int, **defaults: Any) -> None:
+        """Set or update guild notification defaults."""
+        await self.ensure_guild(guild_id)
+        existing = await self.get_guild_notification_defaults(guild_id)
+        now = _utcnow()
+
+        if existing:
+            # Update existing defaults
+            if defaults:
+                assignments = []
+                params: List[Any] = []
+                for idx, (key, value) in enumerate(defaults.items(), start=1):
+                    assignments.append(f"{key} = ${idx}")
+                    params.append(value)
+                assignments.append(f"updated_at = ${len(params) + 1}")
+                params.append(now)
+                params.append(guild_id)
+                await self._execute(
+                    f"UPDATE guild_notification_defaults SET {', '.join(assignments)} WHERE guild_id = ${len(params)}",
+                    tuple(params),
+                )
+        else:
+            # Insert new defaults
+            defaults.setdefault("created_at", now)
+            defaults["updated_at"] = now
+            columns = ["guild_id"] + list(defaults.keys())
+            placeholders = [f"${i+1}" for i in range(len(columns))]
+            values = [guild_id] + list(defaults.values())
+            await self._execute(
+                f"INSERT INTO guild_notification_defaults ({', '.join(columns)}) VALUES ({', '.join(placeholders)})",
+                tuple(values),
+            )
+
+    async def record_notification(
+        self,
+        user_id: int,
+        guild_id: int,
+        notification_type: str,
+        *,
+        task_id: Optional[int] = None,
+        delivery_method: Optional[str] = None,
+        notification_data: Optional[Dict[str, Any]] = None,
+    ) -> int:
+        """Record a sent notification in history."""
+        row = await self._execute(
+            """
+            INSERT INTO notification_history
+            (user_id, guild_id, task_id, notification_type, sent_at, delivery_method, notification_data)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            RETURNING id
+            """,
+            (
+                user_id,
+                guild_id,
+                task_id,
+                notification_type,
+                _utcnow(),
+                delivery_method,
+                json.dumps(notification_data or {}),
+            ),
+            fetchone=True,
+        )
+        return row["id"] if row else 0
+
+    async def check_notification_sent(
+        self,
+        user_id: int,
+        task_id: Optional[int],
+        notification_type: str,
+        *,
+        within_hours: int = 24,
+    ) -> bool:
+        """Check if a notification was recently sent to avoid duplicates."""
+        from datetime import datetime, timedelta, timezone
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=within_hours)).strftime(ISO_FORMAT)
+
+        # Handle NULL task_id for digests - use IS NOT DISTINCT FROM for proper NULL comparison
+        if task_id is None:
+            row = await self._execute(
+                """
+                SELECT COUNT(1) as count
+                FROM notification_history
+                WHERE user_id = $1 AND task_id IS NULL AND notification_type = $2 AND sent_at >= $3
+                """,
+                (user_id, notification_type, cutoff),
+                fetchone=True,
+            )
+        else:
+            row = await self._execute(
+                """
+                SELECT COUNT(1) as count
+                FROM notification_history
+                WHERE user_id = $1 AND task_id = $2 AND notification_type = $3 AND sent_at >= $4
+                """,
+                (user_id, task_id, notification_type, cutoff),
+                fetchone=True,
+            )
+        return bool(row and row["count"] > 0)
+
+    async def acknowledge_notification(self, notification_id: int) -> bool:
+        """Mark a notification as acknowledged/read."""
+        result = await self._execute(
+            "UPDATE notification_history SET acknowledged_at = $1 WHERE id = $2",
+            (_utcnow(), notification_id),
+            rowcount=True,
+        )
+        return bool(result)
+
+    async def snooze_reminder(
+        self,
+        user_id: int,
+        task_id: int,
+        notification_type: str,
+        snooze_until: str,
+    ) -> int:
+        """Snooze a reminder until a specific time."""
+        row = await self._execute(
+            """
+            INSERT INTO snoozed_reminders
+            (user_id, task_id, notification_type, snoozed_at, snooze_until, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            RETURNING id
+            """,
+            (user_id, task_id, notification_type, _utcnow(), snooze_until, _utcnow()),
+            fetchone=True,
+        )
+        return row["id"] if row else 0
+
+    async def get_due_snoozed_reminders(self) -> List[Dict[str, Any]]:
+        """Get snoozed reminders that are now due."""
+        rows = await self._execute(
+            """
+            SELECT
+                sr.id AS snooze_id,
+                sr.user_id,
+                sr.task_id,
+                sr.notification_type,
+                sr.snoozed_at,
+                sr.snooze_until,
+                t.title,
+                t.description,
+                t.due_date,
+                t.completed,
+                boards.channel_id,
+                boards.guild_id
+            FROM snoozed_reminders sr
+            JOIN tasks t ON sr.task_id = t.id
+            JOIN boards ON t.board_id = boards.id
+            WHERE sr.snooze_until <= $1
+            ORDER BY sr.snooze_until ASC
+            """,
+            (_utcnow(),),
+            fetchall=True,
+        )
+        return [dict(row) for row in rows or []]
+
+    async def delete_snoozed_reminder(self, snooze_id: int) -> bool:
+        """Delete a snoozed reminder after processing."""
+        result = await self._execute(
+            "DELETE FROM snoozed_reminders WHERE id = $1",
+            (snooze_id,),
+            rowcount=True,
+        )
+        return bool(result)
+
+    async def create_custom_reminder_rule(
+        self,
+        user_id: int,
+        guild_id: int,
+        rule_name: str,
+        rule_pattern: str,
+        rule_data: Dict[str, Any],
+        *,
+        board_id: Optional[int] = None,
+    ) -> int:
+        """Create a custom reminder rule."""
+        await self.ensure_guild(guild_id)
+        row = await self._execute(
+            """
+            INSERT INTO custom_reminder_rules
+            (user_id, guild_id, board_id, rule_name, rule_pattern, rule_data, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            RETURNING id
+            """,
+            (
+                user_id,
+                guild_id,
+                board_id,
+                rule_name,
+                rule_pattern,
+                json.dumps(rule_data),
+                _utcnow(),
+                _utcnow(),
+            ),
+            fetchone=True,
+        )
+        return row["id"] if row else 0
+
+    async def get_custom_reminder_rules(
+        self,
+        user_id: int,
+        guild_id: int,
+    ) -> List[Dict[str, Any]]:
+        """Get all custom reminder rules for a user in a guild."""
+        rows = await self._execute(
+            """
+            SELECT * FROM custom_reminder_rules
+            WHERE user_id = $1 AND guild_id = $2 AND enabled = TRUE
+            ORDER BY created_at DESC
+            """,
+            (user_id, guild_id),
+            fetchall=True,
+        )
+        return [dict(row) for row in rows or []]
 
     async def _execute(
         self,

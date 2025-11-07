@@ -16,7 +16,9 @@ class TasksCog(commands.Cog):
         self.db = db
         self.embeds = embeds
 
-    async def board_autocomplete(self, interaction: discord.Interaction, current: str) -> List[app_commands.Choice[str]]:
+    async def board_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> List[app_commands.Choice[str]]:
         if not interaction.guild_id:
             return []
         boards = await self.db.fetch_boards(interaction.guild_id)
@@ -25,15 +27,25 @@ class TasksCog(commands.Cog):
         for board in boards:
             if needle and needle not in board["name"].lower():
                 continue
-            results.append(app_commands.Choice(name=f"{board['name']} · {board['id']}", value=str(board["id"])))
+            results.append(
+                app_commands.Choice(
+                    name=f"{board['name']} · {board['id']}", value=str(board["id"])
+                )
+            )
             if len(results) >= 25:
                 break
         if not results:
             for board in boards[:25]:
-                results.append(app_commands.Choice(name=f"{board['name']} · {board['id']}", value=str(board["id"])))
+                results.append(
+                    app_commands.Choice(
+                        name=f"{board['name']} · {board['id']}", value=str(board["id"])
+                    )
+                )
         return results[:25]
 
-    async def column_autocomplete(self, interaction: discord.Interaction, current: str) -> List[app_commands.Choice[str]]:
+    async def column_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> List[app_commands.Choice[str]]:
         if not interaction.guild_id:
             return []
         board_value = getattr(interaction.namespace, "board", None)
@@ -57,10 +69,14 @@ class TasksCog(commands.Cog):
         for column in columns:
             if needle and needle not in column["name"].lower():
                 continue
-            results.append(app_commands.Choice(name=column["name"], value=column["name"]))
+            results.append(
+                app_commands.Choice(name=column["name"], value=column["name"])
+            )
         return results[:25]
 
-    @app_commands.command(name="add-task", description="[Server] Create a new task on a board")
+    @app_commands.command(
+        name="add-task", description="[Server] Create a new task on a board"
+    )
     @app_commands.checks.cooldown(1, 10.0)
     async def add_task(self, interaction: discord.Interaction) -> None:
         from .ui import AddTaskFlowView
@@ -68,19 +84,29 @@ class TasksCog(commands.Cog):
 
         if not interaction.guild_id:
             await interaction.response.send_message(
-                embed=self.embeds.message("Guild Only", "This command must be used in a guild.", emoji="⚠️"),
+                embed=self.embeds.message(
+                    "Guild Only", "This command must be used in a guild.", emoji="⚠️"
+                ),
             )
             return
 
         # Check if there are any boards first
         board_options = await get_board_choices(self.db, interaction.guild_id)
         if not board_options:
+            from .ui import QuickCreateBoardView
+
+            view = QuickCreateBoardView(
+                guild_id=interaction.guild_id,
+                db=self.db,
+                embeds=self.embeds,
+            )
             await interaction.response.send_message(
                 embed=self.embeds.message(
                     "No Boards",
-                    "This server has no boards yet. Create one with `/create-board`.",
+                    "This server has no boards yet. Create one to get started!",
                     emoji="📭",
                 ),
+                view=view,
             )
             return
 
@@ -91,11 +117,15 @@ class TasksCog(commands.Cog):
             initial_board_options=board_options,
         )
         await interaction.response.send_message(
-            embed=self.embeds.message("Add Task", "Select a board and column to add a task:", emoji="➕"),
+            embed=self.embeds.message(
+                "Add Task", "Select a board and column to add a task:", emoji="➕"
+            ),
             view=view,
         )
 
-    @app_commands.command(name="list-tasks", description="[Server] List tasks on a board")
+    @app_commands.command(
+        name="list-tasks", description="[Server] List tasks on a board"
+    )
     @app_commands.checks.cooldown(1, 3.0)
     async def list_tasks(self, interaction: discord.Interaction) -> None:
         from .ui import BoardSelectorView
@@ -103,7 +133,9 @@ class TasksCog(commands.Cog):
 
         if not interaction.guild_id:
             await interaction.response.send_message(
-                embed=self.embeds.message("Guild Only", "This command must be used in a guild.", emoji="⚠️"),
+                embed=self.embeds.message(
+                    "Guild Only", "This command must be used in a guild.", emoji="⚠️"
+                ),
             )
             return
 
@@ -119,7 +151,9 @@ class TasksCog(commands.Cog):
             )
             return
 
-        async def on_board_selected(inter: discord.Interaction, board_id: int, board: dict) -> None:
+        async def on_board_selected(
+            inter: discord.Interaction, board_id: int, board: dict
+        ) -> None:
             await inter.response.defer(thinking=True)
             # Fetch all non-completed tasks by default
             tasks = await self.db.fetch_tasks(
@@ -130,7 +164,9 @@ class TasksCog(commands.Cog):
             )
             if not tasks:
                 await inter.followup.send(
-                    embed=self.embeds.message("No Tasks", "This board has no active tasks.", emoji="📭"),
+                    embed=self.embeds.message(
+                        "No Tasks", "This board has no active tasks.", emoji="📭"
+                    ),
                 )
                 return
 
@@ -154,86 +190,28 @@ class TasksCog(commands.Cog):
             initial_options=board_options,
         )
         await interaction.response.send_message(
-            embed=self.embeds.message("List Tasks", "Select a board to view its tasks:", emoji="🗂️"),
+            embed=self.embeds.message(
+                "List Tasks", "Select a board to view its tasks:", emoji="🗂️"
+            ),
             view=view,
         )
 
-    @app_commands.command(name="move-task", description="[Server] Move a task to another column")
+    @app_commands.command(
+        name="move-task", description="[Server] Move a task to another column"
+    )
     @app_commands.checks.cooldown(1, 3.0)
     async def move_task(self, interaction: discord.Interaction) -> None:
-        from .ui import MoveTaskModal, ColumnSelectorView
-        from .ui.helpers import get_column_choices
-
-        if not interaction.guild_id:
-            await interaction.response.send_message(
-                embed=self.embeds.message("Guild Only", "This command must be used in a guild.", emoji="⚠️"),
-            )
-            return
-
-        async def on_task_validated(inter: discord.Interaction, task_id: int, task: dict) -> None:
-            # Get column options for the task's board
-            column_options = await get_column_choices(self.db, task["board_id"])
-            if not column_options:
-                await inter.response.send_message(
-                    embed=self.embeds.message(
-                        "No Columns",
-                        "This board has no columns.",
-                        emoji="⚠️",
-                    ),
-                )
-                return
-
-            # Show column selector for the task's board
-            async def on_column_selected(col_inter: discord.Interaction, column_id: int, column: dict) -> None:
-                await col_inter.response.defer(thinking=True)
-                await self.db.move_task(task_id, column_id)
-                await col_inter.followup.send(
-                    embed=self.embeds.message("Task Moved", f"#{task_id} → **{column['name']}**", emoji="🧭"),
-                )
-
-            column_view = ColumnSelectorView(
-                board_id=task["board_id"],
-                db=self.db,
-                embeds=self.embeds,
-                on_select=on_column_selected,
-                placeholder="Select target column...",
-                initial_options=column_options,
-            )
-            await inter.response.send_message(
-                embed=self.embeds.message("Move Task", f"Select a column to move task #{task_id} to:", emoji="🧭"),
-                view=column_view,
-            )
-
-        modal = MoveTaskModal(
-            on_task_validated=on_task_validated,
-            db=self.db,
-            embeds=self.embeds,
-        )
-        await interaction.response.send_modal(modal)
-
-    @app_commands.command(name="assign-task", description="[Server] Assign a task to a member")
-    @app_commands.checks.cooldown(1, 3.0)
-    async def assign_task(self, interaction: discord.Interaction) -> None:
-        from .ui import AssignTaskModal
-
-        modal = AssignTaskModal(db=self.db, embeds=self.embeds)
-        await interaction.response.send_modal(modal)
-
-    @app_commands.command(name="edit-task", description="[Server] Update details for a task")
-    @app_commands.checks.cooldown(1, 10.0)
-    async def edit_task(self, interaction: discord.Interaction) -> None:
-        from .ui import EditTaskFlowView
+        from .ui import MoveTaskFlowView
         from .ui.helpers import get_board_choices
 
         if not interaction.guild_id:
             await interaction.response.send_message(
-                embed=self.embeds.message("Guild Only", "This command must be used in a guild.", emoji="⚠️"),
+                embed=self.embeds.message(
+                    "Guild Only", "This command must be used in a guild.", emoji="⚠️"
+                ),
             )
             return
-        
-        # Check if user is admin (has Manage Guild permission)
-        is_admin = interaction.user.guild_permissions.manage_guild if interaction.user else False
-        
+
         # Get board options
         board_options = await get_board_choices(self.db, interaction.guild_id)
         if not board_options:
@@ -241,7 +219,86 @@ class TasksCog(commands.Cog):
                 embed=self.embeds.message("No Boards", "There are no boards in this server.", emoji="⚠️"),
             )
             return
-        
+
+        view = MoveTaskFlowView(
+            guild_id=interaction.guild_id,
+            db=self.db,
+            embeds=self.embeds,
+            initial_board_options=board_options,
+        )
+
+        await interaction.response.send_message(
+            embed=self.embeds.message("Move Task", "Select a board to move a task:", emoji="🧭"),
+            view=view,
+        )
+
+    @app_commands.command(
+        name="assign-task", description="[Server] Assign a task to a member"
+    )
+    @app_commands.checks.cooldown(1, 3.0)
+    async def assign_task(self, interaction: discord.Interaction) -> None:
+        from .ui import AssignTaskFlowView
+        from .ui.helpers import get_board_choices
+
+        if not interaction.guild_id:
+            await interaction.response.send_message(
+                embed=self.embeds.message("Guild Only", "This command must be used in a guild.", emoji="⚠️"),
+            )
+            return
+
+        # Get board options
+        board_options = await get_board_choices(self.db, interaction.guild_id)
+        if not board_options:
+            await interaction.response.send_message(
+                embed=self.embeds.message("No Boards", "There are no boards in this server.", emoji="⚠️"),
+            )
+            return
+
+        view = AssignTaskFlowView(
+            guild_id=interaction.guild_id,
+            db=self.db,
+            embeds=self.embeds,
+            initial_board_options=board_options,
+        )
+
+        await interaction.response.send_message(
+            embed=self.embeds.message("Assign Task", "Select a board to assign a task:", emoji="👥"),
+            view=view,
+        )
+
+    @app_commands.command(
+        name="edit-task", description="[Server] Update details for a task"
+    )
+    @app_commands.checks.cooldown(1, 10.0)
+    async def edit_task(self, interaction: discord.Interaction) -> None:
+        from .ui import EditTaskFlowView
+        from .ui.helpers import get_board_choices
+
+        if not interaction.guild_id:
+            await interaction.response.send_message(
+                embed=self.embeds.message(
+                    "Guild Only", "This command must be used in a guild.", emoji="⚠️"
+                ),
+            )
+            return
+
+        # Check if user is admin (has Manage Guild permission)
+        is_admin = (
+            interaction.user.guild_permissions.manage_guild
+            if interaction.user
+            else False
+        )
+
+        # Get board options
+        board_options = await get_board_choices(self.db, interaction.guild_id)
+        if not board_options:
+            await interaction.response.send_message(
+                embed=self.embeds.message(
+                    "No Boards", "There are no boards in this server.", emoji="⚠️"
+                ),
+            )
+            return
+
         view = EditTaskFlowView(
             guild_id=interaction.guild_id,
             user_id=interaction.user.id,
@@ -250,7 +307,7 @@ class TasksCog(commands.Cog):
             embeds=self.embeds,
             initial_board_options=board_options,
         )
-        
+
         await interaction.response.send_message(
             embed=self.embeds.message(
                 "Edit Task",
@@ -260,7 +317,9 @@ class TasksCog(commands.Cog):
             view=view,
         )
 
-    @app_commands.command(name="complete-task", description="[Server] Mark a task complete/incomplete")
+    @app_commands.command(
+        name="complete-task", description="[Server] Mark a task complete/incomplete"
+    )
     @app_commands.checks.cooldown(1, 3.0)
     async def complete_task(self, interaction: discord.Interaction) -> None:
         from .ui import CompleteTaskFlowView
@@ -268,25 +327,29 @@ class TasksCog(commands.Cog):
 
         if not interaction.guild_id:
             await interaction.response.send_message(
-                embed=self.embeds.message("Guild Only", "This command must be used in a guild.", emoji="⚠️"),
+                embed=self.embeds.message(
+                    "Guild Only", "This command must be used in a guild.", emoji="⚠️"
+                ),
             )
             return
-        
+
         # Get board options
         board_options = await get_board_choices(self.db, interaction.guild_id)
         if not board_options:
             await interaction.response.send_message(
-                embed=self.embeds.message("No Boards", "There are no boards in this server.", emoji="⚠️"),
+                embed=self.embeds.message(
+                    "No Boards", "There are no boards in this server.", emoji="⚠️"
+                ),
             )
             return
-        
+
         view = CompleteTaskFlowView(
             guild_id=interaction.guild_id,
             db=self.db,
             embeds=self.embeds,
             initial_board_options=board_options,
         )
-        
+
         await interaction.response.send_message(
             embed=self.embeds.message(
                 "Complete Task",
@@ -299,58 +362,83 @@ class TasksCog(commands.Cog):
     @app_commands.command(name="delete-task", description="[Server] Remove a task")
     @app_commands.checks.cooldown(1, 3.0)
     async def delete_task(self, interaction: discord.Interaction) -> None:
-        from .ui import TaskIDInputModal, DeleteTaskConfirmationView
+        from .ui import DeleteTaskFlowView
+        from .ui.helpers import get_board_choices
 
         if not interaction.guild_id:
             await interaction.response.send_message(
-                embed=self.embeds.message("Guild Only", "This command must be used in a guild.", emoji="⚠️"),
+                embed=self.embeds.message(
+                    "Guild Only", "This command must be used in a guild.", emoji="⚠️"
+                ),
             )
             return
 
-        async def on_task_validated(inter: discord.Interaction, task_id: int) -> None:
-            # Verify task belongs to this guild
-            task = await self.db.fetch_task(task_id)
-            if not task:
-                await inter.response.send_message(
-                    embed=self.embeds.message("Task Not Found", f"Task #{task_id} does not exist.", emoji="⚠️"),
-                )
-                return
-
-            board = await self.db.get_board(inter.guild_id, task["board_id"])
-            if not board:
-                await inter.response.send_message(
-                    embed=self.embeds.message("Task Not Found", "Task not part of this guild.", emoji="⚠️"),
-                )
-                return
-
-            # Show confirmation view with task details
-            task_embed = self.embeds.task_detail(task, task.get("column_name", "Unknown"))
-            confirm_view = DeleteTaskConfirmationView(
-                task_id=task_id,
-                task=task,
-                db=self.db,
-                embeds=self.embeds,
+        # Get board options
+        board_options = await get_board_choices(self.db, interaction.guild_id)
+        if not board_options:
+            await interaction.response.send_message(
+                embed=self.embeds.message("No Boards", "There are no boards in this server.", emoji="⚠️"),
             )
-            await inter.response.send_message(
-                embed=task_embed,
-                view=confirm_view,
-            )
+            return
 
-        modal = TaskIDInputModal(
-            title="Delete Task",
-            on_submit_callback=on_task_validated,
+        view = DeleteTaskFlowView(
+            guild_id=interaction.guild_id,
+            db=self.db,
             embeds=self.embeds,
+            initial_board_options=board_options,
         )
-        await interaction.response.send_modal(modal)
 
-    @app_commands.command(name="search-task", description="[Server] Full-text search across tasks")
+        await interaction.response.send_message(
+            embed=self.embeds.message("Delete Task", "Select a board to delete a task:", emoji="🗑️"),
+            view=view,
+        )
+
+    @app_commands.command(name="recover-task", description="[Server] Recover a deleted task")
+    @app_commands.checks.cooldown(1, 3.0)
+    async def recover_task(self, interaction: discord.Interaction) -> None:
+        from .ui import RecoverTaskFlowView
+        from .ui.helpers import get_board_choices
+
+        if not interaction.guild_id:
+            await interaction.response.send_message(
+                embed=self.embeds.message(
+                    "Guild Only", "This command must be used in a guild.", emoji="⚠️"
+                ),
+            )
+            return
+
+        # Get board options
+        board_options = await get_board_choices(self.db, interaction.guild_id)
+        if not board_options:
+            await interaction.response.send_message(
+                embed=self.embeds.message("No Boards", "There are no boards in this server.", emoji="⚠️"),
+            )
+            return
+
+        view = RecoverTaskFlowView(
+            guild_id=interaction.guild_id,
+            db=self.db,
+            embeds=self.embeds,
+            initial_board_options=board_options,
+        )
+
+        await interaction.response.send_message(
+            embed=self.embeds.message("Recover Task", "Select a board to recover a deleted task:", emoji="♻️"),
+            view=view,
+        )
+
+    @app_commands.command(
+        name="search-task", description="[Server] Full-text search across tasks"
+    )
     @app_commands.checks.cooldown(1, 10.0)
     async def search_task(self, interaction: discord.Interaction) -> None:
         from .ui import SearchTaskModal
 
         if not interaction.guild_id:
             await interaction.response.send_message(
-                embed=self.embeds.message("Guild Only", "Search must be run inside a server.", emoji="⚠️"),
+                embed=self.embeds.message(
+                    "Guild Only", "Search must be run inside a server.", emoji="⚠️"
+                ),
             )
             return
 
@@ -371,7 +459,9 @@ class TasksCog(commands.Cog):
 
     async def _resolve_column(self, board_id: int, columns, name: Optional[str]):
         if name:
-            column = next((col for col in columns if col["name"].lower() == name.lower()), None)
+            column = next(
+                (col for col in columns if col["name"].lower() == name.lower()), None
+            )
             if not column:
                 raise app_commands.AppCommandError("Column not found.")
             return column
@@ -392,6 +482,7 @@ class TasksCog(commands.Cog):
 
     def _format_task_line(self, task) -> str:
         from utils.embeds import _format_assignees
+
         assignee = _format_assignees(task).replace("👤 ", "").replace("👥 ", "")
         status = "✅" if task.get("completed") else "❌"
         due = task.get("due_date") or "—"

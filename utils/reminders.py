@@ -90,11 +90,18 @@ class ReminderScheduler:
                     # Double-check after acquiring lock (another tick might have already run)
                     if not self._should_run_today(now, guild["reminder_time"], guild_id):
                         continue
-                    # Mark as run BEFORE dispatching to prevent race conditions
-                    self._last_run[guild_id] = now.date().isoformat()
                     try:
-                        await self._dispatch_guild(guild_id, due_tasks, now)
+                        # Dispatch and track success - only mark guild as run if all channels succeed
+                        success = await self._dispatch_guild(guild_id, due_tasks, now)
+                        if success:
+                            # Mark as run AFTER successful dispatch to allow retries on failure
+                            self._last_run[guild_id] = now.date().isoformat()
+                        else:
+                            # Clear guild tracking if dispatch failed so it can retry
+                            self._last_run.pop(guild_id, None)
                     except discord.HTTPException as exc:
+                        # Clear guild tracking on exception so it can retry
+                        self._last_run.pop(guild_id, None)
                         self.logger.warning("Failed sending reminders for guild %s: %s", guild_id, exc)
 
     def _should_run_today(self, now: datetime, reminder_time: str, guild_id: int) -> bool:
@@ -105,36 +112,65 @@ class ReminderScheduler:
         last_run = self._last_run.get(guild_id)
         return last_run != now.date().isoformat()
 
-    async def _dispatch_guild(self, guild_id: int, tasks: List[Dict[str, Any]], now: datetime) -> None:
+    async def _dispatch_guild(self, guild_id: int, tasks: List[Dict[str, Any]], now: datetime) -> bool:
+        """
+        Dispatch reminders to all channels in a guild.
+        Returns True if all channels were successfully sent, False otherwise.
+        """
+        # Group tasks by channel_id to respect privacy boundaries
+        # Each board's tasks should only be sent to that board's channel
+        # This ensures private channel boards don't leak tasks to other channels
         grouped: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
         for task in tasks:
             if task["guild_id"] != guild_id:
                 continue
             grouped[task["channel_id"]].append(task)
+        
         if not grouped:
-            return
+            return True  # No channels to send to, consider it successful
+        
+        # Get the guild object to get the guild name
+        guild = self.bot.get_guild(guild_id)
+        if guild is None:
+            self.logger.warning("Cannot access guild %s for reminders", guild_id)
+            return False
+        
         today = now.date().isoformat()
+        all_succeeded = True
+        
+        # Send one digest per channel (respecting privacy boundaries)
+        # Each channel receives only tasks from boards in that channel
+        # This prevents private board tasks from leaking to public channels
         for channel_id, channel_tasks in grouped.items():
             # Check if we've already sent to this channel today
             if self._channel_last_run.get(channel_id) == today:
                 self.logger.debug("Skipping channel %s - already sent digest today", channel_id)
                 continue
+            
             channel = self.bot.get_channel(channel_id)
             if channel is None:
                 try:
                     channel = await self.bot.fetch_channel(channel_id)
                 except discord.HTTPException:
                     self.logger.warning("Cannot access channel %s for reminders", channel_id)
+                    all_succeeded = False
                     continue
+            
             if not isinstance(channel, discord.abc.Messageable):
                 continue
+            
+            # Send a single digest for this channel's tasks only
+            # This ensures privacy: each channel only sees tasks from its own boards
             try:
                 # Mark channel as sent BEFORE sending to prevent race conditions
                 self._channel_last_run[channel_id] = today
-                embed = self.embed_factory.reminder_digest(channel.guild.name, channel_tasks)
+                embed = self.embed_factory.reminder_digest(guild.name, channel_tasks)
                 await channel.send(embed=embed)
                 self.logger.info("Sent daily digest to channel %s (%s tasks)", channel_id, len(channel_tasks))
             except discord.HTTPException as exc:
                 # If send failed, don't mark as sent so it can retry
                 self._channel_last_run.pop(channel_id, None)
+                all_succeeded = False
                 self.logger.warning("Failed to send reminder to channel %s: %s", channel_id, exc)
+        
+        return all_succeeded

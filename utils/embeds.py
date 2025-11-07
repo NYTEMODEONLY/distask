@@ -383,6 +383,81 @@ class EmbedFactory:
 
         return self._finalize(embed)
 
+    def board_snapshot(
+        self,
+        board: Dict[str, Any],
+        columns: List[Dict[str, Any]],
+        tasks_by_column: Dict[int, List[Dict[str, Any]]],
+    ) -> discord.Embed:
+        """Create a snapshot embed for always-visible board views."""
+        embed = discord.Embed(
+            title=f"📋 {board['name']}",
+            description=board.get("description") or "Board snapshot (auto-updates)",
+            color=self.color,
+        )
+        
+        # Add board metadata
+        if board.get("created_at"):
+            time_ago = _format_relative_time(board["created_at"])
+            embed.add_field(
+                name="📅 Created",
+                value=time_ago,
+                inline=True,
+            )
+        
+        # Count total tasks
+        total_tasks = sum(len(tasks) for tasks in tasks_by_column.values())
+        completed_tasks = sum(
+            sum(1 for t in tasks if t.get("completed"))
+            for tasks in tasks_by_column.values()
+        )
+        
+        embed.add_field(
+            name="📊 Tasks",
+            value=f"{completed_tasks}/{total_tasks} completed",
+            inline=True,
+        )
+        
+        # Show top tasks per column (limit to avoid embed size limits)
+        max_tasks_per_column = 5
+        for column in columns:
+            column_id = column["id"]
+            column_tasks = tasks_by_column.get(column_id, [])
+            
+            if not column_tasks:
+                continue
+            
+            # Format tasks for this column
+            task_lines = []
+            for task in column_tasks[:max_tasks_per_column]:
+                status_emoji = "✅" if task.get("completed") else "📋"
+                assignee_str = ""
+                assignee_ids = task.get("assignee_ids", [])
+                if assignee_ids:
+                    mentions = ", ".join([f"<@{uid}>" for uid in assignee_ids[:2]])
+                    assignee_str = f" • {mentions}"
+                    if len(assignee_ids) > 2:
+                        assignee_str += f" +{len(assignee_ids) - 2}"
+                
+                task_lines.append(
+                    f"{status_emoji} **#{task['id']}** {task['title']}{assignee_str}"
+                )
+            
+            if len(column_tasks) > max_tasks_per_column:
+                task_lines.append(f"*...and {len(column_tasks) - max_tasks_per_column} more*")
+            
+            column_emoji = _get_column_emoji(column["name"])
+            embed.add_field(
+                name=f"{column_emoji} {column['name']} ({len(column_tasks)})",
+                value="\n".join(task_lines) if task_lines else "—",
+                inline=False,
+            )
+        
+        # Footer with last update time
+        embed.set_footer(text=f"{FOOTER_TEXT} • Auto-updating board view")
+        
+        return self._finalize(embed)
+
     def task_detail(
         self,
         task: Dict[str, Any],
@@ -466,6 +541,15 @@ class EmbedFactory:
             value=status_value,
             inline=True,
         )
+        
+        # Completion notes if task is completed
+        completion_notes = task.get("completion_notes")
+        if completed and completion_notes:
+            embed.add_field(
+                name="📝 Completion Notes",
+                value=completion_notes,
+                inline=False,
+            )
         
         return self._finalize(embed)
 
