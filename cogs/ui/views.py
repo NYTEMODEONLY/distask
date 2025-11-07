@@ -2110,7 +2110,7 @@ class RecoverBoardFlowView(discord.ui.View):
             await interaction.followup.send(
                 embed=self.embeds.message(
                     "Recovery Failed",
-                    f"Board #{board_id} could not be recovered. It may not be deleted.",
+                    f"Board #{board_id} could not be recovered. It may not be deleted, or there may be an active board with the same name.",
                     emoji="⚠️",
                 ),
             )
@@ -2253,7 +2253,7 @@ class RecoverColumnFlowView(discord.ui.View):
             await interaction.followup.send(
                 embed=self.embeds.message(
                     "Recovery Failed",
-                    f"Column #{column_id} could not be recovered. It may not be deleted.",
+                    f"Column #{column_id} could not be recovered. It may not be deleted, or there may be an active column with the same name.",
                     emoji="⚠️",
                 ),
             )
@@ -2982,7 +2982,7 @@ class BoardViewSetupView(discord.ui.View):
         
         # Get channel
         channel = interaction.guild.get_channel(channel_id)
-        if not channel or not isinstance(channel, discord.TextChannel):
+        if not channel or not isinstance(channel, (discord.TextChannel, discord.Thread)):
             await interaction.response.send_message(
                 embed=self.embeds.message("Error", "Invalid channel.", emoji="❌"),
             )
@@ -3022,7 +3022,7 @@ class BoardViewSetupView(discord.ui.View):
             # Update existing message
             try:
                 old_channel = interaction.client.get_channel(view_config["channel_id"])
-                if old_channel and isinstance(old_channel, discord.TextChannel):
+                if old_channel and isinstance(old_channel, (discord.TextChannel, discord.Thread)):
                     old_message = await old_channel.fetch_message(view_config["message_id"])
                     await old_message.edit(embed=embed)
                     

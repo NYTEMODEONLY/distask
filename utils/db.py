@@ -683,7 +683,29 @@ class Database:
         return bool(result)
     
     async def recover_board(self, guild_id: int, board_id: int) -> bool:
-        """Recover a soft-deleted board by clearing deleted_at."""
+        """Recover a soft-deleted board by clearing deleted_at.
+        
+        Returns False if recovery would cause a name conflict with an existing active board.
+        """
+        # First, check if there's a name conflict with an active board
+        deleted_board = await self._execute(
+            "SELECT name FROM boards WHERE guild_id = $1 AND id = $2 AND deleted_at IS NOT NULL",
+            (guild_id, board_id),
+            fetchone=True,
+        )
+        if not deleted_board:
+            return False  # Board not found or not deleted
+        
+        # Check for name conflict with active board
+        conflict = await self._execute(
+            "SELECT id FROM boards WHERE guild_id = $1 AND name = $2 AND deleted_at IS NULL",
+            (guild_id, deleted_board["name"]),
+            fetchone=True,
+        )
+        if conflict:
+            return False  # Name conflict - active board with same name exists
+        
+        # Safe to recover
         result = await self._execute(
             "UPDATE boards SET deleted_at = NULL WHERE guild_id = $1 AND id = $2 AND deleted_at IS NOT NULL",
             (guild_id, board_id),
@@ -692,7 +714,29 @@ class Database:
         return bool(result)
     
     async def recover_column(self, board_id: int, column_id: int) -> bool:
-        """Recover a soft-deleted column by clearing deleted_at."""
+        """Recover a soft-deleted column by clearing deleted_at.
+        
+        Returns False if recovery would cause a name conflict with an existing active column.
+        """
+        # First, check if there's a name conflict with an active column
+        deleted_column = await self._execute(
+            "SELECT name FROM columns WHERE board_id = $1 AND id = $2 AND deleted_at IS NOT NULL",
+            (board_id, column_id),
+            fetchone=True,
+        )
+        if not deleted_column:
+            return False  # Column not found or not deleted
+        
+        # Check for name conflict with active column
+        conflict = await self._execute(
+            "SELECT id FROM columns WHERE board_id = $1 AND name = $2 AND deleted_at IS NULL",
+            (board_id, deleted_column["name"]),
+            fetchone=True,
+        )
+        if conflict:
+            return False  # Name conflict - active column with same name exists
+        
+        # Safe to recover
         result = await self._execute(
             "UPDATE columns SET deleted_at = NULL WHERE board_id = $1 AND id = $2 AND deleted_at IS NOT NULL",
             (board_id, column_id),

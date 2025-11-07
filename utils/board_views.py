@@ -69,7 +69,7 @@ class BoardViewUpdater:
         message_id = view_config.get("message_id")
         
         channel = self.bot.get_channel(channel_id)
-        if not channel or not isinstance(channel, discord.TextChannel):
+        if not channel or not isinstance(channel, (discord.TextChannel, discord.Thread)):
             self.logger.warning("Channel %s not found for board view refresh", channel_id)
             return
         
