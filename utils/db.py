@@ -1532,6 +1532,84 @@ class Database:
             )
         return bool(row and row["count"] > 0)
 
+    async def check_channel_digest_sent(
+        self,
+        channel_id: int,
+        guild_id: int,
+        notification_type: str,
+        *,
+        within_hours: int = 24,
+    ) -> bool:
+        """Check if a channel digest was recently sent to avoid duplicates.
+        
+        Args:
+            channel_id: Discord channel ID
+            guild_id: Discord guild ID
+            notification_type: "daily_digest" or "weekly_digest"
+            within_hours: Hours window to check (default 24 for daily, 167 for weekly)
+        
+        Returns:
+            True if digest was sent recently, False otherwise
+        """
+        from datetime import datetime, timedelta, timezone
+        import json
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=within_hours)).strftime(ISO_FORMAT)
+        
+        row = await self._execute(
+            """
+            SELECT COUNT(1) as count
+            FROM notification_history
+            WHERE guild_id = $1 
+              AND notification_type = $2 
+              AND task_id IS NULL
+              AND notification_data->>'channel_id' = $3
+              AND sent_at >= $4
+            """,
+            (guild_id, notification_type, str(channel_id), cutoff),
+            fetchone=True,
+        )
+        return bool(row and row["count"] > 0)
+
+    async def record_channel_digest(
+        self,
+        channel_id: int,
+        guild_id: int,
+        notification_type: str,
+    ) -> int:
+        """Record a channel digest in notification history for deduplication.
+        
+        Args:
+            channel_id: Discord channel ID
+            guild_id: Discord guild ID
+            notification_type: "daily_digest" or "weekly_digest"
+        
+        Returns:
+            Notification history record ID
+        """
+        import json
+        notification_data = {"channel_id": channel_id}
+        
+        # Use user_id=0 as sentinel for channel-level digests (not user-specific)
+        row = await self._execute(
+            """
+            INSERT INTO notification_history
+            (user_id, guild_id, task_id, notification_type, sent_at, delivery_method, notification_data)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            RETURNING id
+            """,
+            (
+                0,  # Sentinel user_id for channel-level digests
+                guild_id,
+                None,  # task_id is NULL for digests
+                notification_type,
+                _utcnow(),
+                "channel",  # Channel digests are always sent to channels
+                json.dumps(notification_data),
+            ),
+            fetchone=True,
+        )
+        return row["id"] if row else 0
+
     async def acknowledge_notification(self, notification_id: int) -> bool:
         """Mark a notification as acknowledged/read."""
         result = await self._execute(
