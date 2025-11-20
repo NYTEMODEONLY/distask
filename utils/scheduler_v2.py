@@ -290,6 +290,29 @@ class DigestEngine:
                         await self._send_weekly_digest(channel_id, guild_id, channel_tasks)
                         self._channel_weekly_last_run[channel_id] = str(current_week_guild_tz)
 
+    async def _check_quiet_hours_for_channel(
+        self,
+        guild_id: int,
+        tasks: List[Dict[str, Any]],
+    ) -> bool:
+        """Check if any user with tasks in the channel is in quiet hours.
+        
+        Returns:
+            True if any user is in quiet hours (should suppress), False otherwise
+        """
+        # Collect all unique user IDs from tasks
+        user_ids = set()
+        for task in tasks:
+            assignee_ids = task.get("assignee_ids", [])
+            user_ids.update(assignee_ids)
+        
+        # Check quiet hours for each user
+        for user_id in user_ids:
+            if await self.pref_manager.is_quiet_hours(user_id, guild_id):
+                return True  # At least one user is in quiet hours
+        
+        return False  # No users in quiet hours
+
     async def _send_daily_digest(
         self,
         channel_id: int,
@@ -298,6 +321,11 @@ class DigestEngine:
     ) -> None:
         """Send daily digest to a channel with all tasks from boards in that channel."""
         if not tasks:
+            return
+
+        # Check quiet hours before sending
+        if await self._check_quiet_hours_for_channel(guild_id, tasks):
+            logger.debug(f"Skipping daily digest for channel {channel_id} - users in quiet hours")
             return
 
         now = datetime.now(timezone.utc)
@@ -477,6 +505,11 @@ class DigestEngine:
     ) -> None:
         """Send weekly digest to a channel with all tasks from boards in that channel."""
         if not tasks:
+            return
+
+        # Check quiet hours before sending
+        if await self._check_quiet_hours_for_channel(guild_id, tasks):
+            logger.debug(f"Skipping weekly digest for channel {channel_id} - users in quiet hours")
             return
 
         now = datetime.now(timezone.utc)
