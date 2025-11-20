@@ -237,18 +237,19 @@ class DigestEngine:
                 if should_send_daily:
                     # Check database first (persists across restarts and works across multiple processes)
                     if not await self.db.check_channel_digest_sent(channel_id, guild_id, "daily_digest", within_hours=23):
-                        await self._send_daily_digest(channel_id, guild_id, channel_tasks)
-                        # Record in database for future deduplication
-                        await self.db.record_channel_digest(channel_id, guild_id, "daily_digest")
-                        # Also update in-memory cache for fast lookups
-                        guild_prefs = await self.db.get_guild_notification_defaults(guild_id)
-                        guild_tz_name = guild_prefs.get("timezone", "UTC") if guild_prefs else "UTC"
-                        try:
-                            guild_tz = pytz.timezone(guild_tz_name)
-                        except pytz.UnknownTimeZoneError:
-                            guild_tz = pytz.UTC
-                        today_guild_tz = now.astimezone(guild_tz).date().isoformat()
-                        self._channel_last_run[channel_id] = today_guild_tz
+                        # Only record in database if send succeeds
+                        success = await self._send_daily_digest(channel_id, guild_id, channel_tasks)
+                        if success:
+                            await self.db.record_channel_digest(channel_id, guild_id, "daily_digest")
+                            # Also update in-memory cache for fast lookups
+                            guild_prefs = await self.db.get_guild_notification_defaults(guild_id)
+                            guild_tz_name = guild_prefs.get("timezone", "UTC") if guild_prefs else "UTC"
+                            try:
+                                guild_tz = pytz.timezone(guild_tz_name)
+                            except pytz.UnknownTimeZoneError:
+                                guild_tz = pytz.UTC
+                            today_guild_tz = now.astimezone(guild_tz).date().isoformat()
+                            self._channel_last_run[channel_id] = today_guild_tz
 
                 # Check if any user wants weekly digest
                 should_send_weekly = False
@@ -282,29 +283,35 @@ class DigestEngine:
                     # Check database first (persists across restarts and works across multiple processes)
                     # Use 167 hours (7 days) window for weekly digests
                     if not await self.db.check_channel_digest_sent(channel_id, guild_id, "weekly_digest", within_hours=167):
-                        await self._send_weekly_digest(channel_id, guild_id, channel_tasks)
-                        # Record in database for future deduplication
-                        await self.db.record_channel_digest(channel_id, guild_id, "weekly_digest")
-                        # Also update in-memory cache for fast lookups
-                        guild_prefs = await self.db.get_guild_notification_defaults(guild_id)
-                        guild_tz_name = guild_prefs.get("timezone", "UTC") if guild_prefs else "UTC"
-                        try:
-                            guild_tz = pytz.timezone(guild_tz_name)
-                        except pytz.UnknownTimeZoneError:
-                            guild_tz = pytz.UTC
-                        now_guild_tz = now.astimezone(guild_tz)
-                        current_week_guild_tz = now_guild_tz.isocalendar()[1]  # Week number in guild timezone
-                        self._channel_weekly_last_run[channel_id] = str(current_week_guild_tz)
+                        # Only record in database if send succeeds
+                        success = await self._send_weekly_digest(channel_id, guild_id, channel_tasks)
+                        if success:
+                            await self.db.record_channel_digest(channel_id, guild_id, "weekly_digest")
+                            # Also update in-memory cache for fast lookups
+                            guild_prefs = await self.db.get_guild_notification_defaults(guild_id)
+                            guild_tz_name = guild_prefs.get("timezone", "UTC") if guild_prefs else "UTC"
+                            try:
+                                guild_tz = pytz.timezone(guild_tz_name)
+                            except pytz.UnknownTimeZoneError:
+                                guild_tz = pytz.UTC
+                            now_guild_tz = now.astimezone(guild_tz)
+                            current_week_guild_tz = now_guild_tz.isocalendar()[1]  # Week number in guild timezone
+                            self._channel_weekly_last_run[channel_id] = str(current_week_guild_tz)
 
     async def _check_quiet_hours_for_channel(
         self,
         guild_id: int,
         tasks: List[Dict[str, Any]],
     ) -> bool:
-        """Check if any user with tasks in the channel is in quiet hours.
+        """Check if ALL users with tasks in the channel are in quiet hours.
+        
+        Since channel digests are broadcast to everyone, we only skip if ALL
+        users are in quiet hours. If only some users are in quiet hours,
+        we still send the digest (they'll get pinged, but that's a limitation
+        of channel-wide digests).
         
         Returns:
-            True if any user is in quiet hours (should suppress), False otherwise
+            True if ALL users are in quiet hours (should suppress), False otherwise
         """
         # Collect all unique user IDs from tasks
         user_ids = set()
@@ -312,27 +319,35 @@ class DigestEngine:
             assignee_ids = task.get("assignee_ids", [])
             user_ids.update(assignee_ids)
         
-        # Check quiet hours for each user
-        for user_id in user_ids:
-            if await self.pref_manager.is_quiet_hours(user_id, guild_id):
-                return True  # At least one user is in quiet hours
+        # If no users, don't suppress
+        if not user_ids:
+            return False
         
-        return False  # No users in quiet hours
+        # Check quiet hours for each user - only suppress if ALL are in quiet hours
+        for user_id in user_ids:
+            if not await self.pref_manager.is_quiet_hours(user_id, guild_id):
+                return False  # At least one user is NOT in quiet hours, send digest
+        
+        return True  # All users are in quiet hours
 
     async def _send_daily_digest(
         self,
         channel_id: int,
         guild_id: int,
         tasks: List[Dict[str, Any]],
-    ) -> None:
-        """Send daily digest to a channel with all tasks from boards in that channel."""
+    ) -> bool:
+        """Send daily digest to a channel with all tasks from boards in that channel.
+        
+        Returns:
+            True if digest was sent successfully, False otherwise
+        """
         if not tasks:
-            return
+            return False
 
         # Check quiet hours before sending
         if await self._check_quiet_hours_for_channel(guild_id, tasks):
-            logger.debug(f"Skipping daily digest for channel {channel_id} - users in quiet hours")
-            return
+            logger.debug(f"Skipping daily digest for channel {channel_id} - all users in quiet hours")
+            return False
 
         now = datetime.now(timezone.utc)
 
@@ -498,25 +513,32 @@ class DigestEngine:
             if channel and isinstance(channel, (discord.TextChannel, discord.Thread)):
                 await channel.send(embed=embed)
                 logger.info(f"Sent daily digest to channel {channel_id} ({total_tasks} tasks)")
+                return True
             else:
                 logger.warning(f"Cannot send digest to channel {channel_id} - invalid channel type")
+                return False
         except Exception as e:
             logger.error(f"Failed to send daily digest to channel {channel_id}: {e}", exc_info=True)
+            return False
 
     async def _send_weekly_digest(
         self,
         channel_id: int,
         guild_id: int,
         tasks: List[Dict[str, Any]],
-    ) -> None:
-        """Send weekly digest to a channel with all tasks from boards in that channel."""
+    ) -> bool:
+        """Send weekly digest to a channel with all tasks from boards in that channel.
+        
+        Returns:
+            True if digest was sent successfully, False otherwise
+        """
         if not tasks:
-            return
+            return False
 
         # Check quiet hours before sending
         if await self._check_quiet_hours_for_channel(guild_id, tasks):
-            logger.debug(f"Skipping weekly digest for channel {channel_id} - users in quiet hours")
-            return
+            logger.debug(f"Skipping weekly digest for channel {channel_id} - all users in quiet hours")
+            return False
 
         now = datetime.now(timezone.utc)
 
@@ -596,10 +618,13 @@ class DigestEngine:
             if channel and isinstance(channel, (discord.TextChannel, discord.Thread)):
                 await channel.send(embed=embed)
                 logger.info(f"Sent weekly digest to channel {channel_id} ({len(tasks)} tasks)")
+                return True
             else:
                 logger.warning(f"Cannot send weekly digest to channel {channel_id} - invalid channel type")
+                return False
         except Exception as e:
             logger.error(f"Failed to send weekly digest to channel {channel_id}: {e}", exc_info=True)
+            return False
 
 
 class EscalationEngine:
