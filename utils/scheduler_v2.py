@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import discord
+import pytz
 
 from utils.db import Database, ISO_FORMAT
 from utils.notifications import NotificationRouter
@@ -214,10 +215,17 @@ class DigestEngine:
                 if not should_send_daily:
                     guild_prefs = await self.db.get_guild_notification_defaults(guild_id)
                     if guild_prefs and guild_prefs.get("enable_daily_digest", True):
-                        # Use guild default time (09:00 UTC if not set)
+                        # Get guild timezone and convert now to guild timezone
+                        guild_tz_name = guild_prefs.get("timezone", "UTC")
+                        try:
+                            guild_tz = pytz.timezone(guild_tz_name)
+                        except pytz.UnknownTimeZoneError:
+                            guild_tz = pytz.UTC
+                        
+                        now_guild_tz = now.astimezone(guild_tz)
                         digest_time = guild_prefs.get("daily_digest_time", "09:00")
                         target_hour, target_minute = map(int, digest_time.split(":"))
-                        if now.hour == target_hour and now.minute == target_minute:
+                        if now_guild_tz.hour == target_hour and now_guild_tz.minute == target_minute:
                             should_send_daily = True
                     elif not guild_prefs:
                         # No guild prefs, use system default (09:00 UTC)
@@ -225,14 +233,22 @@ class DigestEngine:
                             should_send_daily = True
 
                 # Check channel-level deduplication for daily digest
+                # Use guild timezone for date tracking to ensure consistent day boundaries
                 if should_send_daily:
-                    if self._channel_last_run.get(channel_id) != today:
+                    guild_prefs = await self.db.get_guild_notification_defaults(guild_id)
+                    guild_tz_name = guild_prefs.get("timezone", "UTC") if guild_prefs else "UTC"
+                    try:
+                        guild_tz = pytz.timezone(guild_tz_name)
+                    except pytz.UnknownTimeZoneError:
+                        guild_tz = pytz.UTC
+                    today_guild_tz = now.astimezone(guild_tz).date().isoformat()
+                    
+                    if self._channel_last_run.get(channel_id) != today_guild_tz:
                         await self._send_daily_digest(channel_id, guild_id, channel_tasks)
-                        self._channel_last_run[channel_id] = today
+                        self._channel_last_run[channel_id] = today_guild_tz
 
                 # Check if any user wants weekly digest
                 should_send_weekly = False
-                current_week = now.isocalendar()[1]  # Week number
                 for user_id in user_ids_in_channel:
                     if await self.pref_manager.should_send_digest_now(user_id, guild_id, "weekly"):
                         should_send_weekly = True
@@ -242,19 +258,37 @@ class DigestEngine:
                 if not should_send_weekly:
                     guild_prefs = await self.db.get_guild_notification_defaults(guild_id)
                     if guild_prefs and guild_prefs.get("enable_weekly_digest", False):
+                        # Get guild timezone and convert now to guild timezone
+                        guild_tz_name = guild_prefs.get("timezone", "UTC")
+                        try:
+                            guild_tz = pytz.timezone(guild_tz_name)
+                        except pytz.UnknownTimeZoneError:
+                            guild_tz = pytz.UTC
+                        
+                        now_guild_tz = now.astimezone(guild_tz)
                         digest_day = guild_prefs.get("weekly_digest_day", 1)  # Monday
                         digest_time = guild_prefs.get("weekly_digest_time", "09:00")
                         target_hour, target_minute = map(int, digest_time.split(":"))
-                        if (now.weekday() == digest_day and 
-                            now.hour == target_hour and now.minute == target_minute):
+                        if (now_guild_tz.weekday() == digest_day and 
+                            now_guild_tz.hour == target_hour and now_guild_tz.minute == target_minute):
                             should_send_weekly = True
 
                 # Check channel-level deduplication for weekly digest
+                # Use guild timezone for week calculation to ensure consistent week boundaries
                 if should_send_weekly:
+                    guild_prefs = await self.db.get_guild_notification_defaults(guild_id)
+                    guild_tz_name = guild_prefs.get("timezone", "UTC") if guild_prefs else "UTC"
+                    try:
+                        guild_tz = pytz.timezone(guild_tz_name)
+                    except pytz.UnknownTimeZoneError:
+                        guild_tz = pytz.UTC
+                    now_guild_tz = now.astimezone(guild_tz)
+                    current_week_guild_tz = now_guild_tz.isocalendar()[1]  # Week number in guild timezone
+                    
                     last_week = self._channel_weekly_last_run.get(channel_id)
-                    if last_week != str(current_week):
+                    if last_week != str(current_week_guild_tz):
                         await self._send_weekly_digest(channel_id, guild_id, channel_tasks)
-                        self._channel_weekly_last_run[channel_id] = str(current_week)
+                        self._channel_weekly_last_run[channel_id] = str(current_week_guild_tz)
 
     async def _send_daily_digest(
         self,
