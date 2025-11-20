@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import discord
+import pytz
 
 from utils.db import Database, ISO_FORMAT
 from utils.notifications import NotificationRouter
@@ -141,7 +142,7 @@ class DueDateReminderEngine:
 
 
 class DigestEngine:
-    """Generates daily and weekly task digests for users."""
+    """Generates daily and weekly task digests per channel."""
 
     def __init__(
         self,
@@ -154,13 +155,17 @@ class DigestEngine:
         self.db = db
         self.router = router
         self.pref_manager = pref_manager
+        self._channel_last_run: Dict[int, str] = {}  # channel_id -> date for daily digests
+        self._channel_weekly_last_run: Dict[int, str] = {}  # channel_id -> week for weekly digests
 
     async def run(self) -> None:
-        """Generate and send daily/weekly digests to users."""
+        """Generate and send daily/weekly digests per channel."""
         logger.debug("DigestEngine: Generating digests")
 
         # Get all guilds
         guilds = await self.db.list_guilds()
+        now = datetime.now(timezone.utc)
+        today = now.date().isoformat()
 
         for guild_data in guilds:
             guild_id = guild_data["guild_id"]
@@ -168,49 +173,191 @@ class DigestEngine:
             # Get all boards in this guild
             boards = await self.db.fetch_boards(guild_id)
 
-            # Collect all unique user IDs from tasks in this guild
-            user_tasks_map: Dict[int, List[Dict[str, Any]]] = {}
+            # Group tasks by channel_id (one digest per channel)
+            channel_tasks_map: Dict[int, List[Dict[str, Any]]] = {}
 
             for board in boards:
                 tasks = await self.db.fetch_tasks(board["id"], include_completed=False)
+                channel_id = board["channel_id"]
+
+                if channel_id not in channel_tasks_map:
+                    channel_tasks_map[channel_id] = []
 
                 for task in tasks:
+                    channel_tasks_map[channel_id].append({
+                        **task,
+                        "board_name": board["name"],
+                        "board_id": board["id"],
+                        "channel_id": channel_id,
+                        "guild_id": guild_id,
+                    })
+
+            # Send one digest per channel
+            for channel_id, channel_tasks in channel_tasks_map.items():
+                if not channel_tasks:
+                    continue
+
+                # Check if any user with tasks in this channel wants daily digest
+                # Collect unique user IDs from tasks in this channel
+                user_ids_in_channel = set()
+                for task in channel_tasks:
                     assignee_ids = task.get("assignee_ids", [])
-                    for assignee_id in assignee_ids:
-                        if assignee_id not in user_tasks_map:
-                            user_tasks_map[assignee_id] = []
-                        user_tasks_map[assignee_id].append({
-                            **task,
-                            "board_name": board["name"],
-                            "board_id": board["id"],
-                            "channel_id": board["channel_id"],
-                        })
+                    user_ids_in_channel.update(assignee_ids)
 
-            # Send digests to each user
-            for user_id, user_tasks in user_tasks_map.items():
-                # Check if it's time for daily digest
-                if await self.pref_manager.should_send_digest_now(user_id, guild_id, "daily"):
-                    # Check if we already sent today's digest (use task_id=None for digests)
-                    if not await self.db.check_notification_sent(user_id, None, "daily_digest", within_hours=23):
-                        await self._send_daily_digest(user_id, guild_id, user_tasks)
+                # Check if any user wants daily digest at this time
+                should_send_daily = False
+                for user_id in user_ids_in_channel:
+                    if await self.pref_manager.should_send_digest_now(user_id, guild_id, "daily"):
+                        should_send_daily = True
+                        break
 
-                # Check if it's time for weekly digest
-                if await self.pref_manager.should_send_digest_now(user_id, guild_id, "weekly"):
-                    # Check if we already sent this week's digest (use task_id=None for digests)
-                    if not await self.db.check_notification_sent(user_id, None, "weekly_digest", within_hours=167):  # 7 days
-                        await self._send_weekly_digest(user_id, guild_id, user_tasks)
+                # Also check guild-level default if no user preferences found
+                if not should_send_daily:
+                    guild_prefs = await self.db.get_guild_notification_defaults(guild_id)
+                    if guild_prefs and guild_prefs.get("enable_daily_digest", True):
+                        # Get guild timezone and convert now to guild timezone
+                        guild_tz_name = guild_prefs.get("timezone", "UTC")
+                        try:
+                            guild_tz = pytz.timezone(guild_tz_name)
+                        except pytz.UnknownTimeZoneError:
+                            guild_tz = pytz.UTC
+                        
+                        now_guild_tz = now.astimezone(guild_tz)
+                        digest_time = guild_prefs.get("daily_digest_time", "09:00")
+                        target_hour, target_minute = map(int, digest_time.split(":"))
+                        if now_guild_tz.hour == target_hour and now_guild_tz.minute == target_minute:
+                            should_send_daily = True
+                    elif not guild_prefs:
+                        # No guild prefs, use system default (09:00 UTC)
+                        if now.hour == 9 and now.minute == 0:
+                            should_send_daily = True
+
+                # Check channel-level deduplication for daily digest
+                # Use database-backed check to prevent duplicates across restarts/processes
+                if should_send_daily:
+                    # Check database first (persists across restarts and works across multiple processes)
+                    if not await self.db.check_channel_digest_sent(channel_id, guild_id, "daily_digest", within_hours=23):
+                        # Only record in database if send succeeds
+                        success = await self._send_daily_digest(channel_id, guild_id, channel_tasks)
+                        if success:
+                            await self.db.record_channel_digest(channel_id, guild_id, "daily_digest")
+                            # Also update in-memory cache for fast lookups
+                            guild_prefs = await self.db.get_guild_notification_defaults(guild_id)
+                            guild_tz_name = guild_prefs.get("timezone", "UTC") if guild_prefs else "UTC"
+                            try:
+                                guild_tz = pytz.timezone(guild_tz_name)
+                            except pytz.UnknownTimeZoneError:
+                                guild_tz = pytz.UTC
+                            today_guild_tz = now.astimezone(guild_tz).date().isoformat()
+                            self._channel_last_run[channel_id] = today_guild_tz
+
+                # Check if any user wants weekly digest
+                should_send_weekly = False
+                for user_id in user_ids_in_channel:
+                    if await self.pref_manager.should_send_digest_now(user_id, guild_id, "weekly"):
+                        should_send_weekly = True
+                        break
+
+                # Check guild-level default for weekly
+                if not should_send_weekly:
+                    guild_prefs = await self.db.get_guild_notification_defaults(guild_id)
+                    if guild_prefs and guild_prefs.get("enable_weekly_digest", False):
+                        # Get guild timezone and convert now to guild timezone
+                        guild_tz_name = guild_prefs.get("timezone", "UTC")
+                        try:
+                            guild_tz = pytz.timezone(guild_tz_name)
+                        except pytz.UnknownTimeZoneError:
+                            guild_tz = pytz.UTC
+                        
+                        now_guild_tz = now.astimezone(guild_tz)
+                        digest_day = guild_prefs.get("weekly_digest_day", 1)  # Monday
+                        digest_time = guild_prefs.get("weekly_digest_time", "09:00")
+                        target_hour, target_minute = map(int, digest_time.split(":"))
+                        if (now_guild_tz.weekday() == digest_day and 
+                            now_guild_tz.hour == target_hour and now_guild_tz.minute == target_minute):
+                            should_send_weekly = True
+
+                # Check channel-level deduplication for weekly digest
+                # Use database-backed check to prevent duplicates across restarts/processes
+                if should_send_weekly:
+                    # Check database first (persists across restarts and works across multiple processes)
+                    # Use 167 hours (7 days) window for weekly digests
+                    if not await self.db.check_channel_digest_sent(channel_id, guild_id, "weekly_digest", within_hours=167):
+                        # Only record in database if send succeeds
+                        success = await self._send_weekly_digest(channel_id, guild_id, channel_tasks)
+                        if success:
+                            await self.db.record_channel_digest(channel_id, guild_id, "weekly_digest")
+                            # Also update in-memory cache for fast lookups
+                            guild_prefs = await self.db.get_guild_notification_defaults(guild_id)
+                            guild_tz_name = guild_prefs.get("timezone", "UTC") if guild_prefs else "UTC"
+                            try:
+                                guild_tz = pytz.timezone(guild_tz_name)
+                            except pytz.UnknownTimeZoneError:
+                                guild_tz = pytz.UTC
+                            now_guild_tz = now.astimezone(guild_tz)
+                            current_week_guild_tz = now_guild_tz.isocalendar()[1]  # Week number in guild timezone
+                            self._channel_weekly_last_run[channel_id] = str(current_week_guild_tz)
+
+    async def _check_quiet_hours_for_channel(
+        self,
+        guild_id: int,
+        tasks: List[Dict[str, Any]],
+    ) -> bool:
+        """Check if ALL users with tasks in the channel are in quiet hours.
+        
+        Since channel digests are broadcast to everyone, we only skip if ALL
+        users are in quiet hours. If only some users are in quiet hours,
+        we still send the digest (they'll get pinged, but that's a limitation
+        of channel-wide digests).
+        
+        Returns:
+            True if ALL users are in quiet hours (should suppress), False otherwise
+        """
+        # Collect all unique user IDs from tasks
+        user_ids = set()
+        for task in tasks:
+            assignee_ids = task.get("assignee_ids", [])
+            user_ids.update(assignee_ids)
+        
+        # If no users, don't suppress
+        if not user_ids:
+            return False
+        
+        # Check quiet hours for each user - only suppress if ALL are in quiet hours
+        for user_id in user_ids:
+            if not await self.pref_manager.is_quiet_hours(user_id, guild_id):
+                return False  # At least one user is NOT in quiet hours, send digest
+        
+        return True  # All users are in quiet hours
 
     async def _send_daily_digest(
         self,
-        user_id: int,
+        channel_id: int,
         guild_id: int,
         tasks: List[Dict[str, Any]],
-    ) -> None:
-        """Send daily digest to a user."""
+    ) -> bool:
+        """Send daily digest to a channel with all tasks from boards in that channel.
+        
+        Returns:
+            True if digest was sent successfully, False otherwise
+        """
         if not tasks:
-            return
+            return False
+
+        # Check quiet hours before sending
+        if await self._check_quiet_hours_for_channel(guild_id, tasks):
+            logger.debug(f"Skipping daily digest for channel {channel_id} - all users in quiet hours")
+            return False
 
         now = datetime.now(timezone.utc)
+
+        # Group tasks by board
+        board_tasks: Dict[str, List[Dict[str, Any]]] = {}
+        for task in tasks:
+            board_name = task.get("board_name", "Unknown")
+            if board_name not in board_tasks:
+                board_tasks[board_name] = []
+            board_tasks[board_name].append(task)
 
         # Categorize tasks
         overdue = []
@@ -235,75 +382,169 @@ class DigestEngine:
             else:
                 other.append(task)
 
+        # Get guild name
+        guild = self.bot.get_guild(guild_id)
+        guild_name = guild.name if guild else "Unknown Guild"
+
         # Create digest embed
+        total_tasks = len(tasks)
         embed = discord.Embed(
             title="📊 Daily Task Digest",
-            description=f"You have {len(tasks)} active task{'s' if len(tasks) != 1 else ''}",
+            description=f"**{guild_name}** • {total_tasks} active task{'s' if total_tasks != 1 else ''} across {len(board_tasks)} board{'s' if len(board_tasks) != 1 else ''}",
             color=discord.Color.blue(),
             timestamp=now,
         )
 
+        # Helper to format task with assignees
+        def format_task_with_assignees(task: Dict[str, Any]) -> str:
+            title = task.get("title", "Unknown")
+            assignee_ids = task.get("assignee_ids", [])
+            if assignee_ids:
+                mentions = " ".join([f"<@{uid}>" for uid in assignee_ids])
+                return f"• **{title}** {mentions}"
+            return f"• **{title}** *(unassigned)*"
+
+        # Overdue section
         if overdue:
-            overdue_list = "\n".join([f"• **{t['title']}** (Board: {t['board_name']})" for t in overdue[:5]])
-            if len(overdue) > 5:
-                overdue_list += f"\n... and {len(overdue) - 5} more"
+            overdue_by_board: Dict[str, List[Dict[str, Any]]] = {}
+            for task in overdue:
+                board_name = task.get("board_name", "Unknown")
+                if board_name not in overdue_by_board:
+                    overdue_by_board[board_name] = []
+                overdue_by_board[board_name].append(task)
+
+            overdue_text = []
+            for board_name, board_task_list in list(overdue_by_board.items())[:3]:  # Limit to 3 boards
+                board_tasks_str = "\n".join([format_task_with_assignees(t) for t in board_task_list[:5]])
+                if len(board_task_list) > 5:
+                    board_tasks_str += f"\n... and {len(board_task_list) - 5} more"
+                overdue_text.append(f"**{board_name}:**\n{board_tasks_str}")
+
+            if len(overdue_by_board) > 3:
+                overdue_text.append(f"\n... and {len(overdue_by_board) - 3} more board{'s' if len(overdue_by_board) - 3 != 1 else ''}")
+
             embed.add_field(
                 name=f"🚨 Overdue ({len(overdue)})",
-                value=overdue_list,
+                value="\n\n".join(overdue_text) if overdue_text else "None",
                 inline=False,
             )
 
+        # Due today section
         if due_today:
-            today_list = "\n".join([f"• **{t['title']}** (Board: {t['board_name']})" for t in due_today[:5]])
-            if len(due_today) > 5:
-                today_list += f"\n... and {len(due_today) - 5} more"
+            today_by_board: Dict[str, List[Dict[str, Any]]] = {}
+            for task in due_today:
+                board_name = task.get("board_name", "Unknown")
+                if board_name not in today_by_board:
+                    today_by_board[board_name] = []
+                today_by_board[board_name].append(task)
+
+            today_text = []
+            for board_name, board_task_list in list(today_by_board.items())[:3]:
+                board_tasks_str = "\n".join([format_task_with_assignees(t) for t in board_task_list[:5]])
+                if len(board_task_list) > 5:
+                    board_tasks_str += f"\n... and {len(board_task_list) - 5} more"
+                today_text.append(f"**{board_name}:**\n{board_tasks_str}")
+
+            if len(today_by_board) > 3:
+                today_text.append(f"\n... and {len(today_by_board) - 3} more board{'s' if len(today_by_board) - 3 != 1 else ''}")
+
             embed.add_field(
                 name=f"📅 Due Today ({len(due_today)})",
-                value=today_list,
+                value="\n\n".join(today_text) if today_text else "None",
                 inline=False,
             )
 
+        # Due this week section
         if due_soon:
-            soon_list = "\n".join([f"• **{t['title']}** (Board: {t['board_name']})" for t in due_soon[:5]])
-            if len(due_soon) > 5:
-                soon_list += f"\n... and {len(due_soon) - 5} more"
+            soon_by_board: Dict[str, List[Dict[str, Any]]] = {}
+            for task in due_soon:
+                board_name = task.get("board_name", "Unknown")
+                if board_name not in soon_by_board:
+                    soon_by_board[board_name] = []
+                soon_by_board[board_name].append(task)
+
+            soon_text = []
+            for board_name, board_task_list in list(soon_by_board.items())[:3]:
+                board_tasks_str = "\n".join([format_task_with_assignees(t) for t in board_task_list[:5]])
+                if len(board_task_list) > 5:
+                    board_tasks_str += f"\n... and {len(board_task_list) - 5} more"
+                soon_text.append(f"**{board_name}:**\n{board_tasks_str}")
+
+            if len(soon_by_board) > 3:
+                soon_text.append(f"\n... and {len(soon_by_board) - 3} more board{'s' if len(soon_by_board) - 3 != 1 else ''}")
+
             embed.add_field(
                 name=f"⏰ Due This Week ({len(due_soon)})",
-                value=soon_list,
+                value="\n\n".join(soon_text) if soon_text else "None",
                 inline=False,
             )
 
-        # Find a channel to send to (use first board's channel)
-        channel_id = tasks[0].get("channel_id") if tasks else None
+        # Other tasks (no due date)
+        if other:
+            other_by_board: Dict[str, List[Dict[str, Any]]] = {}
+            for task in other:
+                board_name = task.get("board_name", "Unknown")
+                if board_name not in other_by_board:
+                    other_by_board[board_name] = []
+                other_by_board[board_name].append(task)
 
-        # Use task_id=None for digest tracking (digests are not tied to specific tasks)
-        await self.router.send_notification(
-            user_id=user_id,
-            guild_id=guild_id,
-            embed=embed,
-            notification_type="daily_digest",
-            task_id=None,  # NULL value - digests are not task-specific
-            channel_id=channel_id,
-        )
+            other_text = []
+            for board_name, board_task_list in list(other_by_board.items())[:2]:  # Limit to 2 boards for other
+                board_tasks_str = "\n".join([format_task_with_assignees(t) for t in board_task_list[:3]])
+                if len(board_task_list) > 3:
+                    board_tasks_str += f"\n... and {len(board_task_list) - 3} more"
+                other_text.append(f"**{board_name}:**\n{board_tasks_str}")
+
+            if len(other_by_board) > 2:
+                other_text.append(f"\n... and {len(other_by_board) - 2} more board{'s' if len(other_by_board) - 2 != 1 else ''}")
+
+            embed.add_field(
+                name=f"📋 Other Tasks ({len(other)})",
+                value="\n\n".join(other_text) if other_text else "None",
+                inline=False,
+            )
+
+        # Send directly to channel (not through NotificationRouter to avoid user-specific routing)
+        try:
+            channel = self.bot.get_channel(channel_id)
+            if not channel:
+                channel = await self.bot.fetch_channel(channel_id)
+
+            if channel and isinstance(channel, (discord.TextChannel, discord.Thread)):
+                await channel.send(embed=embed)
+                logger.info(f"Sent daily digest to channel {channel_id} ({total_tasks} tasks)")
+                return True
+            else:
+                logger.warning(f"Cannot send digest to channel {channel_id} - invalid channel type")
+                return False
+        except Exception as e:
+            logger.error(f"Failed to send daily digest to channel {channel_id}: {e}", exc_info=True)
+            return False
 
     async def _send_weekly_digest(
         self,
-        user_id: int,
+        channel_id: int,
         guild_id: int,
         tasks: List[Dict[str, Any]],
-    ) -> None:
-        """Send weekly digest to a user."""
+    ) -> bool:
+        """Send weekly digest to a channel with all tasks from boards in that channel.
+        
+        Returns:
+            True if digest was sent successfully, False otherwise
+        """
         if not tasks:
-            return
+            return False
+
+        # Check quiet hours before sending
+        if await self._check_quiet_hours_for_channel(guild_id, tasks):
+            logger.debug(f"Skipping weekly digest for channel {channel_id} - all users in quiet hours")
+            return False
 
         now = datetime.now(timezone.utc)
 
-        embed = discord.Embed(
-            title="📈 Weekly Task Summary",
-            description=f"You have {len(tasks)} active task{'s' if len(tasks) != 1 else ''}",
-            color=discord.Color.purple(),
-            timestamp=now,
-        )
+        # Get guild name
+        guild = self.bot.get_guild(guild_id)
+        guild_name = guild.name if guild else "Unknown Guild"
 
         # Group by board
         board_tasks: Dict[str, List[Dict[str, Any]]] = {}
@@ -313,37 +554,77 @@ class DigestEngine:
                 board_tasks[board_name] = []
             board_tasks[board_name].append(task)
 
-        for board_name, board_task_list in list(board_tasks.items())[:5]:  # Limit to 5 boards
+        embed = discord.Embed(
+            title="📈 Weekly Task Summary",
+            description=f"**{guild_name}** • {len(tasks)} active task{'s' if len(tasks) != 1 else ''} across {len(board_tasks)} board{'s' if len(board_tasks) != 1 else ''}",
+            color=discord.Color.purple(),
+            timestamp=now,
+        )
+
+        # Helper to format assignees
+        def format_assignees(task: Dict[str, Any]) -> str:
+            assignee_ids = task.get("assignee_ids", [])
+            if assignee_ids:
+                mentions = " ".join([f"<@{uid}>" for uid in assignee_ids])
+                return f" {mentions}"
+            return " *(unassigned)*"
+
+        for board_name, board_task_list in list(board_tasks.items())[:10]:  # Limit to 10 boards
             task_summary = f"{len(board_task_list)} task{'s' if len(board_task_list) != 1 else ''}"
 
-            # Count overdue
-            overdue_count = sum(
-                1
-                for t in board_task_list
-                if t.get("due_date")
-                and datetime.fromisoformat(t["due_date"].replace("Z", "+00:00")) < now
-            )
+            # Count overdue and due soon
+            overdue_count = 0
+            due_soon_count = 0
+            for t in board_task_list:
+                if t.get("due_date"):
+                    due_date = datetime.fromisoformat(t["due_date"].replace("Z", "+00:00"))
+                    days_until = (due_date - now).days
+                    if due_date < now:
+                        overdue_count += 1
+                    elif days_until <= 7:
+                        due_soon_count += 1
+
+            status_parts = []
             if overdue_count > 0:
-                task_summary += f" ({overdue_count} overdue)"
+                status_parts.append(f"🚨 {overdue_count} overdue")
+            if due_soon_count > 0:
+                status_parts.append(f"⏰ {due_soon_count} due soon")
+            
+            if status_parts:
+                task_summary += f"\n{', '.join(status_parts)}"
+
+            # Show sample tasks with assignees
+            sample_tasks = []
+            for t in board_task_list[:3]:  # Show first 3 tasks
+                title = t.get("title", "Unknown")
+                assignees = format_assignees(t)
+                sample_tasks.append(f"• **{title}**{assignees}")
+            
+            if len(board_task_list) > 3:
+                sample_tasks.append(f"... and {len(board_task_list) - 3} more")
 
             embed.add_field(
                 name=f"📁 {board_name}",
-                value=task_summary,
-                inline=True,
+                value=f"{task_summary}\n\n" + "\n".join(sample_tasks) if sample_tasks else task_summary,
+                inline=False,
             )
 
-        # Find a channel to send to
-        channel_id = tasks[0].get("channel_id") if tasks else None
+        # Send directly to channel
+        try:
+            channel = self.bot.get_channel(channel_id)
+            if not channel:
+                channel = await self.bot.fetch_channel(channel_id)
 
-        # Use task_id=None for digest tracking (digests are not tied to specific tasks)
-        await self.router.send_notification(
-            user_id=user_id,
-            guild_id=guild_id,
-            embed=embed,
-            notification_type="weekly_digest",
-            task_id=None,  # NULL value - digests are not task-specific
-            channel_id=channel_id,
-        )
+            if channel and isinstance(channel, (discord.TextChannel, discord.Thread)):
+                await channel.send(embed=embed)
+                logger.info(f"Sent weekly digest to channel {channel_id} ({len(tasks)} tasks)")
+                return True
+            else:
+                logger.warning(f"Cannot send weekly digest to channel {channel_id} - invalid channel type")
+                return False
+        except Exception as e:
+            logger.error(f"Failed to send weekly digest to channel {channel_id}: {e}", exc_info=True)
+            return False
 
 
 class EscalationEngine:
